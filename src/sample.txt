@@ -1,7 +1,6 @@
 
 
 defproc testme (chan?(int<512>) Chunk; chan?(int<256>) Digest_in; chan!(int<256>) Digest_out) {
-    // variables used by the hashing code. They are reused in each instantiaation of the hashing code
     int<256> digest_in, digest_out;
     int<512> chunk_;
     int<32> h0, h1, h2, h3, h4, h5,h6, h7;
@@ -17,6 +16,7 @@ defproc testme (chan?(int<512>) Chunk; chan?(int<256>) Digest_in; chan!(int<256>
 skip;skip;skip;
 
     *[
+
 
         Digest_in?digest_in, Chunk?chunk_;
 

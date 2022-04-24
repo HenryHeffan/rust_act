@@ -2,61 +2,72 @@ use super::{
     basic::{ast::*, *},
     langs::{ast::*, *},
 };
-use crate::parser::utils::{MyParserExt, ParserExt2, EE};
+use crate::parser::utils::{MyParserExt, ParserExt2, ET};
 use nom::{
     branch::alt,
-    combinator::{cut, eof, opt, peek},
-    sequence::{preceded, tuple},
+    combinator::{eof, opt},
+    sequence::tuple,
     IResult, Parser,
 };
 use nom_supreme::parser_ext::ParserExt;
 
 pub mod ast {
     use super::*;
+    use crate::parser::utils::SepList1;
 
     #[derive(Debug, Copy, Clone)]
-    pub enum ChanDir {
-        ReadOnly,
-        WriteOnly,
-        ReadWrite,
-        WriteRead,
+    pub enum ChanDir<'a> {
+        ReadOnly(Ctrl<'a>),
+        WriteOnly(Ctrl<'a>),
+        ReadWrite(Ctrl<'a>),
+        WriteRead(Ctrl<'a>),
     }
 
-    pub type ChanType<'a> = (
-        Option<ChanDir>,
-        (PhysicalInstType<'a>, Option<PhysicalInstType<'a>>),
-        Option<ChanDir>,
+    #[derive(Debug)]
+    pub struct ChanType<'a>(
+        pub Kw<'a>,
+        pub Option<ChanDir<'a>>,
+        pub CtrlLParen<'a>,
+        pub PhysicalInstType<'a>,
+        pub Option<(CtrlComma<'a>, PhysicalInstType<'a>)>,
+        pub CtrlRParen<'a>,
+        pub Option<ChanDir<'a>>,
     );
 
-    pub type UserType<'a> = (QualifiedName<'a>, Option<ChanDir>, Vec<TemplateArg<'a>>);
+    #[derive(Debug)]
+    pub enum NonChanTypeName<'a> {
+        Int,
+        Ints,
+        Bool,
+        Enum,
+        QualifiedName(QualifiedName<'a>),
+    }
+
+    #[derive(Debug)]
+    pub struct NonChanType<'a>(
+        pub NonChanTypeName<'a>,
+        pub Option<ChanDir<'a>>,
+        pub  Option<(
+            CtrlLAngBrace<'a>,
+            SepList1<TemplateArg<'a>, CtrlComma<'a>>,
+            CtrlRAngBrace<'a>,
+        )>,
+    );
 
     #[derive(Debug)]
     pub enum PhysicalInstType<'a> {
-        DataType(DataType<'a>),
         ChanType(Box<ChanType<'a>>),
-        UserType(UserType<'a>),
+        NonChanType(NonChanType<'a>),
     }
 
     #[derive(Debug)]
     pub enum TemplateArg<'a> {
-        UserType(UserType<'a>),
+        // UserType(UserType<'a>),
+        PhysType(CtrlAtSign<'a>, PhysicalInstType<'a>),
         ArrayedExprs(ArrayedExprs<'a>),
     }
 
-    pub type IFaceInstType<'a> = UserType<'a>;
-
-    #[derive(Debug, Copy, Clone)]
-    pub enum KwIntKind {
-        Int,
-        Ints,
-    }
-
-    #[derive(Debug)]
-    pub enum DataType<'a> {
-        Int(Option<ChanDir>, Option<Expr<'a>>),
-        Bool(Option<ChanDir>),
-        Enum(Option<ChanDir>, Expr<'a>),
-    }
+    pub type IFaceInstType<'a> = PhysicalInstType<'a>; // UserType<'a>;
 
     #[derive(Debug)]
     pub enum InstType<'a> {
@@ -66,10 +77,10 @@ pub mod ast {
 
     #[derive(Debug)]
     pub enum ParamInstType<'a> {
-        PInt,
-        PBool,
-        PReal,
-        PType(UserType<'a>),
+        PInt(Kw<'a>),
+        PBool(Kw<'a>),
+        PReal(Kw<'a>),
+        PType(Kw<'a>, CtrlLParen<'a>, PhysicalInstType<'a>, CtrlRParen<'a>), // PType(UserType<'a>),
     }
 
     #[derive(Debug)]
@@ -82,24 +93,39 @@ pub mod ast {
 
     #[derive(Debug)]
     pub enum PortConnSpec<'a> {
-        Named(Vec<(Ident<'a>, ArrayedExprs<'a>)>),
-        Unnamed(Vec<Option<ArrayedExprs<'a>>>),
+        Named(SepList1<(CtrlDot<'a>, Ident<'a>, CtrlEquals<'a>, ArrayedExprs<'a>), CtrlComma<'a>>),
+        Unnamed(SepList1<Option<ArrayedExprs<'a>>, CtrlComma<'a>>),
     }
 
-    pub type Connection<'a> = (
-        Ident<'a>,
-        Vec<Expr<'a>>,
-        (Option<PortConnSpec<'a>>, Option<AttrList<'a>>),
+    #[derive(Debug)]
+    pub struct Connection<'a>(
+        pub Ident<'a>,
+        pub Vec<(CtrlLBracket<'a>, Expr<'a>, CtrlRBracket<'a>)>,
+        pub Option<(CtrlLParen<'a>, PortConnSpec<'a>, CtrlRParen<'a>)>,
+        pub Option<(CtrlAtSign<'a>, BracketedAttrList<'a>)>,
+        pub CtrlSemi<'a>,
     );
-    pub type InstanceId<'a> = (
-        Ident<'a>,
-        Option<Vec<ExprRange<'a>>>,
-        Option<PortConnSpec<'a>>,
-        Option<AttrList<'a>>,
-        Option<Vec<ArrayedExprs<'a>>>,
+    #[derive(Debug)]
+    pub struct InstanceId<'a>(
+        pub Ident<'a>,
+        pub Vec<(CtrlLBracket<'a>, ExprRange<'a>, CtrlRBracket<'a>)>,
+        pub Option<(CtrlLParen<'a>, PortConnSpec<'a>, CtrlRParen<'a>)>,
+        pub Option<(CtrlAtSign<'a>, BracketedAttrList<'a>)>,
+        pub Vec<(CtrlEquals<'a>, ArrayedExprs<'a>)>,
     );
-    pub type Instance<'a> = (InstType<'a>, Vec<InstanceId<'a>>);
-    pub type Alias<'a> = (ArrayedExprIds<'a>, ArrayedExprs<'a>);
+    #[derive(Debug)]
+    pub struct Instance<'a>(
+        pub InstType<'a>,
+        pub SepList1<InstanceId<'a>, CtrlComma<'a>>,
+        pub CtrlSemi<'a>,
+    );
+    #[derive(Debug)]
+    pub struct Alias<'a>(
+        pub ArrayedExprIds<'a>,
+        pub CtrlEquals<'a>,
+        pub ArrayedExprs<'a>,
+        pub CtrlSemi<'a>,
+    );
 
     #[derive(Debug)]
     pub enum AliasConnOrInst<'a> {
@@ -112,27 +138,73 @@ pub mod ast {
 
     #[derive(Debug)]
     pub enum GuardedClause<'a> {
-        Expr(Expr<'a>, BaseItemList<'a>),
-        Else(BaseItemList<'a>),
-        MacroLoop((Ident<'a>, ExprRange<'a>, Expr<'a>, BaseItemList<'a>)),
-    }
-
-    pub type Conditional<'a> = Vec<GuardedClause<'a>>;
-    pub type BaseDynamicLoop<'a> = Vec<GuardedClause<'a>>;
-
-    #[derive(Debug, Clone, Copy)]
-    pub enum ConnOp {
-        Equal,
-        NotEqual,
+        Expr(Expr<'a>, CtrlLArrow<'a>, Vec<BaseItem<'a>>),
+        Else(Kw<'a>, CtrlLArrow<'a>, Vec<BaseItem<'a>>),
+        MacroLoop(
+            CtrlLParen<'a>,
+            Ctrl<'a>, // []
+            Ident<'a>,
+            CtrlColon<'a>,
+            ExprRange<'a>,
+            CtrlColon<'a>,
+            Expr<'a>,
+            CtrlLArrow<'a>,
+            Vec<BaseItem<'a>>,
+            CtrlRParen<'a>,
+        ),
     }
 
     #[derive(Debug)]
-    pub enum Assertion<'a> {
-        Expr(Expr<'a>, Option<StrTok<'a>>),
-        Conn(ExprId<'a>, ConnOp, ExprId<'a>, Option<StrTok<'a>>),
+    pub struct Conditional<'a>(
+        pub CtrlLBracket<'a>,
+        pub SepList1<GuardedClause<'a>, Ctrl<'a> /*[]*/>,
+        pub CtrlRBracket<'a>,
+    );
+    #[derive(Debug)]
+    pub struct BaseDynamicLoop<'a>(
+        pub Ctrl<'a>, /* `*[` */
+        pub SepList1<GuardedClause<'a>, Ctrl<'a> /*[]*/>,
+        pub CtrlRBracket<'a>,
+    );
+
+    #[derive(Debug, Clone, Copy)]
+    pub enum ConnOp<'a> {
+        Equal(Ctrl<'a>),
+        NotEqual(Ctrl<'a>),
     }
 
-    pub type DebugOutput<'a> = Vec<ExprOrStr<'a>>;
+    #[derive(Debug)]
+    pub enum AssertionPart<'a> {
+        Expr(Expr<'a>, Option<(CtrlColon<'a>, StrTok<'a>)>),
+        Conn(ExprId<'a>, ConnOp<'a>, ExprId<'a>, Option<(CtrlColon<'a>, StrTok<'a>)>),
+    }
+    #[derive(Debug)]
+    pub struct Assertion<'a>(
+        pub CtrlLBrace<'a>,
+        pub AssertionPart<'a>,
+        pub CtrlRBrace<'a>,
+        pub CtrlSemi<'a>,
+    );
+
+    #[derive(Debug)]
+    pub struct DebugOutput<'a>(
+        pub Ctrl<'a>, /* ${ */
+        pub SepList1<ExprOrStr<'a>, CtrlComma<'a>>,
+        pub CtrlRBrace<'a>,
+        pub CtrlSemi<'a>,
+    );
+
+    #[derive(Debug)]
+    pub struct BaseMacroLoop<'a>(
+        pub CtrlLParen<'a>,
+        pub Option<CtrlSemi<'a>>,
+        pub Ident<'a>,
+        pub CtrlColon<'a>,
+        pub ExprRange<'a>,
+        pub CtrlColon<'a>,
+        pub Vec<BaseItem<'a>>,
+        pub CtrlRParen<'a>,
+    );
 
     #[derive(Debug)]
     pub enum BaseItem<'a> {
@@ -140,7 +212,7 @@ pub mod ast {
         Connection(Connection<'a>),
         Alias(Alias<'a>),
         DynamicLoop(BaseDynamicLoop<'a>),
-        MacroLoop(MacroLoop<'a, bool, (), BaseItemList<'a>>),
+        MacroLoop(BaseMacroLoop<'a>),
         Conditional(Conditional<'a>),
         Assertion(Assertion<'a>),
         DebugOutput(DebugOutput<'a>),
@@ -149,25 +221,39 @@ pub mod ast {
         Hse(LangHse<'a>),
         Prs(LangPrs<'a>),
         Spec(LangSpec<'a>),
-        Refine(BaseItemList<'a>),
+        Refine(LangRefine<'a>),
         Sizing(LangSizing<'a>),
         Initialize(LangInitialize<'a>),
         Dataflow(LangDataflow<'a>),
     }
 
-    pub type BaseItemList<'a> = Vec<BaseItem<'a>>;
-
-    pub type LangRefine<'a> = BaseItemList<'a>;
+    #[derive(Debug)]
+    pub struct LangRefine<'a>(
+        pub Kw<'a>,
+        pub CtrlLBracket<'a>,
+        pub Vec<BaseItem<'a>>,
+        pub CtrlRBracket<'a>,
+    );
 
     // Types for "top level" items
 
     #[derive(Debug)]
+    pub enum Import<'a> {
+        String(StrTok<'a>),
+        Namespace(QualifiedName<'a>, Option<(CtrlLArrow<'a>, Ident<'a>)>),
+        Ident(Ident<'a>, Ctrl<'a> /* => */, Ident<'a>),
+    }
+
+    #[derive(Debug)]
     pub enum TopItem<'a> {
         Namespace(NamespaceDecl<'a>),
-        ImportString(StrTok<'a>),
-        ImportNamespace(QualifiedName<'a>, Option<Ident<'a>>),
-        ImportIdent(Ident<'a>, Ident<'a>),
-        Open(QualifiedName<'a>, Option<Ident<'a>>),
+        Import(Kw<'a>, Import<'a>, CtrlSemi<'a>),
+        Open(
+            Kw<'a>,
+            QualifiedName<'a>,
+            Option<(CtrlLArrow<'a>, Ident<'a>)>,
+            CtrlSemi<'a>,
+        ),
         // These together compose the set of "definitions". Maybe they should be merged?
         DefTemplated(OptTemplateSpec<'a>, TempaltedDef<'a>),
         DefEnum(DefEnum<'a>),
@@ -178,25 +264,58 @@ pub mod ast {
     }
 
     #[derive(Debug)]
-    pub struct NamespaceDecl<'a> {
-        pub export: bool,
-        pub ident: Ident<'a>,
-        pub body: Vec<TopItem<'a>>,
-    }
-
-    pub type PortFormalList<'a> = Vec<(PhysicalInstType<'a>, IdList<'a>)>;
+    pub struct NamespaceDecl<'a>(
+        pub Option<Kw<'a>>,
+        pub Kw<'a>,
+        pub Ident<'a>,
+        pub CtrlLBrace<'a>,
+        pub Vec<TopItem<'a>>,
+        pub CtrlRBrace<'a>,
+    );
 
     #[derive(Debug)]
-    pub enum FunctionFormalList<'a> {
-        Port(PortFormalList<'a>),
-        Param(Vec<ParamInstance<'a>>),
+    pub enum PortFormalListItem<'a> {
+        Phys(PhysicalInstType<'a>, IdList<'a>),
+        Param(ParamInstance<'a>),
     }
 
-    pub type ParamInstance<'a> = (ParamInstType<'a>, IdList<'a>);
-    pub type OptTemplateSpec<'a> = (bool, Option<Vec<ParamInstance<'a>>>);
-    pub type DefEnum<'a> = (Ident<'a>, EnumBody<'a>);
-    pub type DefIFace<'a> = (Ident<'a>, Option<PortFormalList<'a>>);
-    pub type DefFunc<'a> = (Ident<'a>, FunctionFormalList<'a>, FuncRetType<'a>, FuncBody<'a>);
+    #[derive(Debug)]
+    pub struct ParenedPortFormalList<'a>(
+        pub CtrlLParen<'a>,
+        pub Option<SepList1<PortFormalListItem<'a>, CtrlSemi<'a>>>,
+        pub CtrlRParen<'a>,
+    );
+
+    #[derive(Debug)]
+    pub struct ParamInstance<'a>(pub ParamInstType<'a>, pub IdList<'a>);
+    #[derive(Debug)]
+    pub struct OptTemplateSpec<'a>(
+        pub Option<Kw<'a>>,
+        pub  Option<(
+            Kw<'a>,
+            CtrlLAngBrace<'a>,
+            SepList1<ParamInstance<'a>, CtrlSemi<'a>>,
+            CtrlRBrace<'a>,
+        )>,
+    );
+    #[derive(Debug)]
+    pub struct DefEnum<'a>(pub Kw<'a>, pub Ident<'a>, pub EnumBody<'a>);
+    #[derive(Debug)]
+    pub struct DefIFace<'a>(
+        pub Kw<'a>,
+        pub Ident<'a>,
+        pub ParenedPortFormalList<'a>,
+        pub CtrlSemi<'a>,
+    );
+    #[derive(Debug)]
+    pub struct DefFunc<'a>(
+        pub Kw<'a>,
+        pub Ident<'a>,
+        pub ParenedPortFormalList<'a>,
+        pub CtrlColon<'a>,
+        pub FuncRetType<'a>,
+        pub FuncBody<'a>,
+    );
 
     #[derive(Debug)]
     pub enum TempaltedDef<'a> {
@@ -205,50 +324,91 @@ pub mod ast {
         IFace(DefIFace<'a>),
     }
 
-    pub type OverrideSpec<'a> = Vec<OverrideOneSpec<'a>>;
-    pub type OverrideOneSpec<'a> = (UserType<'a>, Vec<Ident<'a>>);
-    pub type InterfaceSpec<'a> = Vec<(IFaceInstType<'a>, Vec<IdMap<'a>>)>;
-    pub type IdMap<'a> = (Ident<'a>, Ident<'a>);
+    #[derive(Debug)]
+    pub struct OverrideOneSpec<'a>(pub PhysicalInstType<'a>, pub SepList1<Ident<'a>, CtrlComma<'a>>); // (UserType<'a>, Vec<Ident<'a>>);
+    #[derive(Debug)]
+    pub struct OverrideSpec<'a>(
+        pub Ctrl<'a>, /* +{ */
+        pub Vec<OverrideOneSpec<'a>>,
+        pub CtrlRBrace<'a>,
+    );
+    #[derive(Debug)]
+    pub struct InterfaceSpecItem<'a>(
+        pub IFaceInstType<'a>,
+        pub CtrlLBrace<'a>,
+        pub SepList1<IdMap<'a>, CtrlComma<'a>>,
+        pub CtrlRBrace<'a>,
+    );
+    #[derive(Debug)]
+    pub struct InterfaceSpec<'a>(pub SepList1<InterfaceSpecItem<'a>, CtrlComma<'a>>);
+    #[derive(Debug)]
+    pub struct IdMap<'a>(pub Ident<'a>, pub CtrlLArrow<'a>, pub Ident<'a>);
 
     #[derive(Debug, Copy, Clone)]
-    pub enum KwProclike {
-        DefProc,
-        DefCell,
-        DefChan,
-        DefData,
+    pub enum KwProclike<'a> {
+        DefProc(Kw<'a>),
+        DefCell(Kw<'a>),
+        DefChan(Kw<'a>),
+        DefData(Kw<'a>),
     }
 
     #[derive(Debug)]
     pub enum Method<'a> {
-        Hse(Ident<'a>, HseItemList<'a>),
-        Assign(Ident<'a>, Expr<'a>),
-        Macro(Ident<'a>, Option<PortFormalList<'a>>, Option<HseItemList<'a>>),
+        Hse(Ident<'a>, CtrlLBrace<'a>, HseItemList<'a>, CtrlRBrace<'a>),
+        Assign(Ident<'a>, CtrlEquals<'a>, Expr<'a>, CtrlSemi<'a>),
+        Macro(
+            Kw<'a>,
+            Ident<'a>,
+            ParenedPortFormalList<'a>,
+            CtrlLBrace<'a>,
+            Option<HseItemList<'a>>,
+            CtrlRBrace<'a>,
+        ),
     }
 
-    pub type DefProclike<'a> = (
-        KwProclike,
-        Ident<'a>,
-        Option<PhysicalInstType<'a>>,
-        Option<PortFormalList<'a>>,
-        Option<InterfaceSpec<'a>>,
-        ProclikeBody<'a>,
+    #[derive(Debug)]
+    pub struct DefProclike<'a>(
+        pub KwProclike<'a>,
+        pub Ident<'a>,
+        pub Option<(Ctrl<'a> /* <: */, PhysicalInstType<'a>)>,
+        pub ParenedPortFormalList<'a>,
+        pub Option<(Ctrl<'a> /* :> */, InterfaceSpec<'a>)>,
+        pub ProclikeBody<'a>,
     );
+
+    #[derive(Debug)]
+    pub struct MethodsBody<'a>(pub Kw<'a>, pub CtrlLBrace<'a>, pub Vec<Method<'a>>, pub CtrlRBrace<'a>);
 
     #[derive(Debug)]
     pub enum ProclikeBody<'a> {
         NoBody,
-        WithBody(Option<OverrideSpec<'a>>, Vec<BaseItem<'a>>, Option<Vec<Method<'a>>>),
+        WithBody(
+            Option<OverrideSpec<'a>>,
+            CtrlLBrace<'a>,
+            Vec<BaseItem<'a>>,
+            Option<MethodsBody<'a>>,
+            CtrlRBrace<'a>,
+        ),
     }
 
-    pub type FuncBody<'a> = ProclikeBody<'a>;
+    #[derive(Debug)]
+    pub struct FuncBody<'a>(pub ProclikeBody<'a>);
 
     // TODO add check in next pass to enforce right sort of things
     #[derive(Debug)]
     pub enum EnumBody<'a> {
         NoBody,
-        WithBody(Vec<Ident<'a>>),
+        WithBody(
+            CtrlLBrace<'a>,
+            SepList1<Ident<'a>, CtrlComma<'a>>,
+            CtrlRBrace<'a>,
+            CtrlSemi<'a>,
+        ),
     }
-    pub type IdList<'a> = Vec<(Ident<'a>, Vec<Expr<'a>>)>;
+    #[derive(Debug)]
+    pub struct IdList<'a>(
+        pub SepList1<(Ident<'a>, Vec<(CtrlLBracket<'a>, Expr<'a>, CtrlRBracket<'a>)>), CtrlComma<'a>>,
+    );
 }
 
 use ast::*;
@@ -259,15 +419,15 @@ use ast::*;
 //         | "?!"
 //         | "!?"
 
-fn chan_dir<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], ChanDir, E> {
-    ctrl2('!', '?')
-        .p()
-        .value(ChanDir::WriteRead)
-        .or(ctrl2('?', '!').p().value(ChanDir::ReadWrite))
-        .or(ctrl('!').p().value(ChanDir::WriteOnly))
-        .or(ctrl('?').p().value(ChanDir::ReadOnly))
-        .context("chan dir")
-        .parse(i)
+fn chan_dir(i: &[u8]) -> IResult<&[u8], ChanDir, ET> {
+    alt((
+        ctrl2('!', '?').map(ChanDir::WriteRead),
+        ctrl2('?', '!').map(ChanDir::ReadWrite),
+        ctrl('!').map(ChanDir::WriteOnly),
+        ctrl('?').map(ChanDir::ReadOnly),
+    ))
+    .context("chan dir")
+    .parse(i)
 }
 
 // physical_inst_type: {excl}
@@ -284,43 +444,52 @@ fn chan_dir<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], ChanDir, E> {
 
 // chan_type: "chan" [ chan_dir ] "(" physical_inst_type [ "," physical_inst_type ] ")" [ chan_dir ]
 
-pub fn physical_inst_type<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], PhysicalInstType<'a>, E> {
-    let int_kw_type = kw("int").value(KwIntKind::Int).or(kw("ints").value(KwIntKind::Ints));
-
-    let data_type = int_kw_type
-        .ignore_then(chan_dir.opt())
-        .then(expr_no_gt.ang_braced().opt())
-        .map(|(a, b)| DataType::Int(a, b))
-        .or(kw("bool").ignore_then(chan_dir.opt()).map(DataType::Bool))
-        .or(kw("enum")
-            .ignore_then(chan_dir.opt())
-            .then(expr_no_gt.ang_braced())
-            .map(|(a, b)| DataType::Enum(a, b)))
-        .context("data type");
-
+pub fn physical_inst_type(i: &[u8]) -> IResult<&[u8], PhysicalInstType, ET> {
     let chan_type = kw("chan")
-        .ignore_then(chan_dir.opt())
-        .then(
-            physical_inst_type
-                .then(ctrl(',').ignore_then(physical_inst_type).opt())
-                .parened(),
+        .then_cut(
+            chan_dir
+                .opt()
+                .then(ctrl('('))
+                .then(physical_inst_type)
+                .then_opt(ctrl(',').then_cut(physical_inst_type))
+                .then(ctrl(')'))
+                .then_opt(chan_dir),
         )
-        .then(chan_dir.opt())
-        .map(|((a, b), c)| (a, b, c))
+        .map(|(a, (((((b, c), d), e), f), g))| ChanType(a, b, c, d, e, f, g))
         .context("chan type");
 
-    data_type
-        .map(PhysicalInstType::DataType)
-        .or(chan_type.map(|a| PhysicalInstType::ChanType(Box::new(a))))
-        .or(user_type.map(PhysicalInstType::UserType))
-        .context("physical inst type")
-        .parse(i)
+    let arg = alt((
+        ctrl('@')
+            .then(physical_inst_type) // user_type
+            .map(|(a, b)| TemplateArg::PhysType(a, b)),
+        arrayed_exprs_no_gt.map(TemplateArg::ArrayedExprs),
+    ));
+    let template_args = arg.list1_sep_by(ctrl(',')).ang_braced().opt();
+    let non_chan_type_name = alt((
+        kw("int").map(|_| NonChanTypeName::Int),
+        kw("ints").map(|_| NonChanTypeName::Ints),
+        kw("bool").map(|_| NonChanTypeName::Bool),
+        kw("enum").map(|_| NonChanTypeName::Enum),
+        qualified_name.map(NonChanTypeName::QualifiedName),
+    ));
+    let non_chan_type = non_chan_type_name
+        .then_opt(chan_dir)
+        .then(template_args)
+        .map(|((a, b), c)| NonChanType(a, b, c))
+        .context("user type");
+
+    alt((
+        chan_type.map(Box::new).map(PhysicalInstType::ChanType),
+        non_chan_type.map(PhysicalInstType::NonChanType),
+    ))
+    .context("physical inst type")
+    .parse(i)
 }
 
 // inst_type: {excl}
 //           physical_inst_type
 //          | param_type
-pub fn inst_type<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], InstType<'a>, E> {
+pub fn inst_type(i: &[u8]) -> IResult<&[u8], InstType, ET> {
     physical_inst_type
         .map(InstType::Phys)
         .or(param_inst_type.map(InstType::Param))
@@ -333,27 +502,27 @@ pub fn inst_type<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], InstType<'a>, 
 //                    "@" user_type
 //                   | arrayed_exprs
 // iface_inst_type: user_type
+//
+// pub fn user_type(i: &[u8]) -> IResult<&[u8], UserType, ET> {
+//     let arg = ctrl('@')
+//         .ignore_then(user_type)
+//         .map(TemplateArg::UserType)
+//         .or(arrayed_exprs_no_gt.map(TemplateArg::ArrayedExprs));
+//     let template_args = arg.list1_sep_by(ctrl(',')).ang_braced().opt().map(|o| match o {
+//         Some(o) => o,
+//         None => Vec::new(),
+//     });
+//
+//     qualified_name
+//         .then(chan_dir.opt())
+//         .then(template_args)
+//         .map(|((a, b), c)| (a, b, c))
+//         .context("user type")
+//         .parse(i)
+// }
 
-pub fn user_type<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], UserType<'a>, E> {
-    let arg = ctrl('@')
-        .ignore_then(user_type)
-        .map(TemplateArg::UserType)
-        .or(arrayed_exprs_no_gt.map(TemplateArg::ArrayedExprs));
-    let template_args = arg.list1_sep_by(ctrl(',')).ang_braced().opt().map(|o| match o {
-        Some(o) => o,
-        None => Vec::new(),
-    });
-
-    qualified_name
-        .then(chan_dir.opt())
-        .then(template_args)
-        .map(|((a, b), c)| (a, b, c))
-        .context("user type")
-        .parse(i)
-}
-
-pub fn iface_inst_type<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], IFaceInstType<'a>, E> {
-    user_type(i)
+pub fn iface_inst_type(i: &[u8]) -> IResult<&[u8], IFaceInstType, ET> {
+    physical_inst_type(i) // user_type(i)
 }
 
 // param_type: {excl}
@@ -361,14 +530,14 @@ pub fn iface_inst_type<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], IFaceIns
 //           | "pbool"
 //           | "preal"
 //           | "ptype" "(" iface_inst_type ")"
-pub fn param_inst_type<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], ParamInstType<'a>, E> {
+pub fn param_inst_type(i: &[u8]) -> IResult<&[u8], ParamInstType, ET> {
     alt((
         kw("ptype")
-            .ignore_then_cut(user_type.parened())
-            .map(ParamInstType::PType),
-        kw("pint").map(|_| ParamInstType::PInt),
-        kw("pbool").map(|_| ParamInstType::PBool),
-        kw("preal").map(|_| ParamInstType::PReal),
+            .then_cut(physical_inst_type.parened()) // user_type.parened()
+            .map(|(a, (b, c, d))| ParamInstType::PType(a, b, c, d)),
+        kw("pint").map(ParamInstType::PInt),
+        kw("pbool").map(ParamInstType::PBool),
+        kw("preal").map(ParamInstType::PReal),
     ))
     .context("param type")
     .parse(i)
@@ -377,7 +546,7 @@ pub fn param_inst_type<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], ParamIns
 //               physical_inst_type
 //              | param_type
 
-pub fn func_ret_type<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], FuncRetType<'a>, E> {
+pub fn func_ret_type(i: &[u8]) -> IResult<&[u8], FuncRetType, ET> {
     let phys = physical_inst_type.map(FuncRetType::Phys);
     let param = param_inst_type.map(FuncRetType::Param);
     param.or(phys).context("func return type").parse(i)
@@ -385,10 +554,12 @@ pub fn func_ret_type<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], FuncRetTyp
 
 // port_conn_spec: { "." ID "=" arrayed_exprs "," }**
 //               | { opt_arrayed_exprs "," }*
-fn port_conn_spec<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], PortConnSpec<'a>, E> {
+fn port_conn_spec(i: &[u8]) -> IResult<&[u8], PortConnSpec, ET> {
     let named = ctrl('.')
-        .precedes(ident)
-        .and(preceded(ctrl('='), arrayed_exprs))
+        .then(ident)
+        .then(ctrl('='))
+        .then(arrayed_exprs)
+        .map(|(((a, b), c), d)| (a, b, c, d))
         .list1_sep_by(ctrl(','))
         .p()
         .map(PortConnSpec::Named);
@@ -400,10 +571,12 @@ fn port_conn_spec<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], PortConnSpec<
 }
 
 // alias: arrayed_expr_ids "=" arrayed_exprs ";"
-fn alias<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], Alias<'a>, E> {
+fn alias(i: &[u8]) -> IResult<&[u8], Alias, ET> {
     arrayed_expr_ids
-        .then_ignore(ctrl('='))
-        .then_cut(arrayed_exprs.then_ignore(ctrl(';')))
+        .then(ctrl('='))
+        .then(arrayed_exprs)
+        .then(ctrl(';'))
+        .map(|(((a, b), c), d)| Alias(a, b, c, d))
         .context("alias")
         .parse(i)
 }
@@ -415,24 +588,24 @@ fn alias<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], Alias<'a>, E> {
 // special_connection_id: ID [ dense_range ] "(" port_conn_spec ")" [ "@" attr_list ]
 //                      | ID [ dense_range ] "@" attr_list
 // connection: special_connection_id ";"
-fn connection<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], Connection<'a>, E> {
+fn connection(i: &[u8]) -> IResult<&[u8], Connection, ET> {
     let with_port_conn = ctrl('(')
-        .ignore_then_cut(
+        .then_cut(
             port_conn_spec
-                .then_ignore(ctrl(')'))
-                .then(ctrl('@').ignore_then(attr_list).opt())
-                .then_ignore(ctrl(';')),
+                .then(ctrl(')'))
+                .then_opt(ctrl('@').then_cut(attr_list))
+                .then(ctrl(';')),
         )
-        .map(|(a, b)| (Some(a), b));
+        .map(|(a, (((b, c), d), e))| (Some((a, b, c)), d, e));
     let no_port_conn = ctrl('@')
-        .ignore_then_cut(attr_list.then_ignore(ctrl(';')))
-        .map(|b| (None, Some(b)));
+        .then_cut(attr_list.then(ctrl(';')))
+        .map(|(a, (b, c))| (None, Some((a, b)), c));
 
     let brackets = expr.bracketed().many0().term_by_peek_not(ctrl('['));
     ident
         .then(brackets)
         .then(with_port_conn.or(no_port_conn))
-        .map(|((a, b), c)| (a, b, c))
+        .map(|((a, b), (c, d, e))| Connection(a, b, c, d, e))
         .context("connection")
         .parse(i)
 }
@@ -444,21 +617,27 @@ fn connection<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], Connection<'a>, E
 // opt_extra_conn: [ "=" { arrayed_exprs "=" }** ]
 // instance_id: ID [ sparse_range ] [ "(" port_conn_spec ")" ] [ "@" attr_list ] opt_extra_conn
 // instance: inst_type { instance_id "," }* ";"
-fn instance<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], Instance<'a>, E> {
-    let extra_conn = ctrl('=').ignore_then_cut(arrayed_exprs.list1_sep_by(ctrl('=')).p());
+fn instance(i: &[u8]) -> IResult<&[u8], Instance, ET> {
+    let extra_conns = ctrl('=').then(arrayed_exprs).many0().term_by_peek_not(ctrl('='));
+    let bracketed_spare_ranges = expr_range.bracketed().many0().term_by_peek_not(ctrl('['));
     let instance_id = ident
-        .then(bracketed_spare_ranges.opt())
-        .then(port_conn_spec.parened().opt())
-        .then(ctrl('@').ignore_then(attr_list).opt())
-        .then(extra_conn.opt())
-        .map(|((((a, b), c), d), e)| (a, b, c, d, e));
+        .then(bracketed_spare_ranges)
+        .then_opt(
+            ctrl('(')
+                .then_cut(port_conn_spec.then(ctrl(')')))
+                .map(|(a, (b, c))| (a, b, c)),
+        )
+        .then_opt(ctrl('@').then_cut(attr_list))
+        .then(extra_conns)
+        .map(|((((a, b), c), d), e)| InstanceId(a, b, c, d, e));
     inst_type
-        .then(cut(instance_id.list1_sep_by(ctrl(',')).p().then_ignore(ctrl(';'))))
+        .then_cut(instance_id.list1_sep_by(ctrl(',')).p().then(ctrl(';')))
+        .map(|(a, (b, c))| Instance(a, b, c))
         .context("instance")
         .parse(i)
 }
 
-pub fn alias_conn_or_inst<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], AliasConnOrInst<'a>, E> {
+pub fn alias_conn_or_inst(i: &[u8]) -> IResult<&[u8], AliasConnOrInst, ET> {
     alt((
         alias.map(AliasConnOrInst::Alias),
         connection.map(AliasConnOrInst::Connection),
@@ -534,82 +713,89 @@ pub fn alias_conn_or_inst<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], Alias
 // template_spec: [ "export" ] "template" "<" { param_inst ";" }* ">"
 //              | "export"
 
-fn guarded_clause<'a, T, OT, E: EE<'a>>(peek_term_1: T, peek_term_2: T) -> impl Parser<&'a [u8], GuardedClause<'a>, E>
+fn guarded_clause<'a, T, OT>(peek_term_1: T, peek_term_2: T) -> impl Parser<&'a [u8], GuardedClause<'a>, ET<'a>>
 where
-    T: Parser<&'a [u8], OT, E> + Clone + Copy,
+    T: Parser<&'a [u8], OT, ET<'a>> + Clone + Copy,
 {
     move |i| {
         let macro_branch = ctrl('(')
-            .p()
             .then(ctrl2('[', ']'))
-            .ignore_then_cut(tuple((
+            .then_cut(tuple((
                 ident,
-                preceded(ctrl(':'), expr_range),
-                preceded(ctrl(':'), expr.terminated(ctrl2('-', '>'))),
-                cut(base_item.many1().terminated(ctrl(')'))),
+                ctrl(':'),
+                expr_range,
+                ctrl(':'),
+                expr,
+                ctrl2('-', '>'),
+                base_item.many1().term_by(ctrl(')')),
             )))
+            .map(|((a, b), (c, d, e, f, g, h, (i, j)))| GuardedClause::MacroLoop(a, b, c, d, e, f, g, h, i, j))
             .context("branch generator macro");
 
         let else_branch = kw("else")
-            .ignore_then(ctrl2('-', '>').ignore_then_cut(base_item.many1().term_by_peek_alt2(peek_term_1, peek_term_2)))
+            .then_cut(ctrl2('-', '>').then(base_item.many1().term_by_peek_alt2(peek_term_1, peek_term_2)))
+            .map(|(a, (b, c))| GuardedClause::Else(a, b, c))
             .context("else branch");
 
         let expr_branch = expr
-            .then_ignore(ctrl2('-', '>'))
+            .then(ctrl2('-', '>'))
             .then_cut(base_item.many1().term_by_peek_alt2(peek_term_1, peek_term_2))
+            .map(|((a, b), c)| GuardedClause::Expr(a, b, c))
             .context("guarded branch");
 
-        alt((
-            macro_branch.map(GuardedClause::MacroLoop),
-            else_branch.map(GuardedClause::Else),
-            expr_branch.map(|(a, b)| GuardedClause::Expr(a, b)),
-        ))
-        .context("guarded clause")
-        .parse(i)
+        alt((macro_branch, else_branch, expr_branch))
+            .context("guarded clause")
+            .parse(i)
     }
 }
-pub fn base_item<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], BaseItem<'a>, E> {
+pub fn base_item(i: &[u8]) -> IResult<&[u8], BaseItem, ET> {
     // NOTE: It is important that `[]` and `]` are both invalid starts to base items
     let conditional_gc = guarded_clause(ctrl2('[', ']'), ctrl(']'));
-    let conditional = ctrl('[').ignore_then_cut(conditional_gc.list1_sep_by(ctrl2('[', ']')).term_by(ctrl(']')));
+    let conditional = ctrl('[')
+        .then_cut(conditional_gc.list1_sep_by(ctrl2('[', ']')).term_by(ctrl(']')))
+        .map(|(a, (b, c))| Conditional(a, b, c));
 
     let base_macro_loop = ctrl('(')
-        .ignore_then_cut(tuple((
-            ctrl(';').p().opt().map(|v| v.is_some()),
+        .then_cut(tuple((
+            ctrl(';').opt(),
             ident,
-            preceded(ctrl(':'), expr_range),
-            none,
-            preceded(ctrl(':'), base_item.many1().terminated(ctrl(')'))),
+            ctrl(':'),
+            expr_range,
+            ctrl(':'),
+            base_item.many1().term_by(ctrl(')')),
         )))
+        .map(|(a, (b, c, d, e, f, (g, h)))| BaseMacroLoop(a, b, c, d, e, f, g, h))
         .context("macro loop");
 
     let dynamic_loop_gc = guarded_clause(ctrl2('[', ']'), ctrl(']'));
     let dynamic_loop_body = dynamic_loop_gc.list1_sep_by(ctrl2('[', ']'));
     let base_dynamic_loop = ctrl2('*', '[')
-        .ignore_then_cut(dynamic_loop_body.term_by(ctrl(']')))
+        .then_cut(dynamic_loop_body.term_by(ctrl(']')))
+        .map(|(a, (b, c))| BaseDynamicLoop(a, b, c))
         .context("dynamic loop");
 
-    let debug_output_body = expr_or_str.list1_sep_by(ctrl(',')).term_by(ctrl('}'));
     let debug_output = ctrl2('$', '{')
-        .ignore_then_cut(debug_output_body)
-        .then_ignore(ctrl(';'));
+        .then_cut(expr_or_str.list1_sep_by(ctrl(',')).term_by(ctrl('}')))
+        .then(ctrl(';'))
+        .map(|((a, (b, c)), d)| DebugOutput(a, b, c, d));
 
     let conn_op = alt((
-        ctrl3('=', '=', '=').p().value(ConnOp::Equal),
-        ctrl3('!', '=', '=').p().value(ConnOp::NotEqual),
+        ctrl3('=', '=', '=').map(ConnOp::Equal),
+        ctrl3('!', '=', '=').map(ConnOp::NotEqual),
     ));
     let expr_assertion = expr
-        .then(ctrl(':').ignore_then(string).opt())
-        .map(|(a, b)| Assertion::Expr(a, b));
+        .then_opt(ctrl(':').then(string))
+        .map(|(a, b)| AssertionPart::Expr(a, b));
     let conn_assertion = expr_id
         .then(conn_op)
         .then(expr_id)
-        .then(ctrl(':').ignore_then(string).opt())
-        .map(|(((a, b), c), d)| Assertion::Conn(a, b, c, d));
+        .then_opt(ctrl(':').then(string))
+        .map(|(((a, b), c), d)| AssertionPart::Conn(a, b, c, d));
     let assertion = ctrl('{')
-        .ignore_then_cut(expr_assertion.or(conn_assertion))
-        .then_ignore(ctrl('}'))
-        .then_ignore(ctrl(';'))
+        .then_cut(expr_assertion.or(conn_assertion))
+        .then(ctrl('}'))
+        .then(ctrl(';'))
+        .map(|(((a, b), c), d)| Assertion(a, b, c, d))
         .context("assertion");
 
     let alias_conn_or_inst = alias_conn_or_inst.map(|v| match v {
@@ -642,9 +828,10 @@ pub fn base_item<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], BaseItem<'a>, 
 }
 
 // lang_refine: "refine" "{" base_item_list "}"
-pub fn lang_refine<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], LangRefine<'a>, E> {
+pub fn lang_refine(i: &[u8]) -> IResult<&[u8], LangRefine, ET> {
     kw("refine")
-        .ignore_then_cut(base_item.many1().braced())
+        .then_cut(base_item.many1().braced())
+        .map(|(a, (b, c, d))| LangRefine(a, b, c, d))
         .context("lang refine")
         .parse(i)
 }
@@ -710,150 +897,157 @@ pub fn lang_refine<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], LangRefine<'
 
     */
 
-fn id_list<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], IdList<'a>, E> {
-    ident
-        .then(expr.bracketed().many0().term_by_peek_not(ctrl('[')))
-        .list1_sep_by(ctrl(','))
-        .parse(i)
+fn id_list(i: &[u8]) -> IResult<&[u8], IdList, ET> {
+    let item = ident.then(expr.bracketed().many0().term_by_peek_not(ctrl('[')));
+
+    item.list1_sep_by(ctrl(',')).p().map(IdList).parse(i)
 }
-fn port_formal_list<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], PortFormalList<'a>, E> {
-    physical_inst_type.then(id_list).list1_sep_by(ctrl(';')).parse(i)
+fn parened_port_formal_list(i: &[u8]) -> IResult<&[u8], ParenedPortFormalList, ET> {
+    let item = alt((
+        physical_inst_type
+            .then(id_list)
+            .map(|(a, b)| PortFormalListItem::Phys(a, b)),
+        param_instance.map(PortFormalListItem::Param),
+    ));
+    item.list1_sep_by(ctrl(';'))
+        .opt()
+        .parened()
+        .map(|(a, b, c)| ParenedPortFormalList(a, b, c))
+        .parse(i)
 }
 
 // param_inst: param_type id_list
-fn param_instance<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], ParamInstance<'a>, E> {
-    param_inst_type.then(id_list).parse(i)
+fn param_instance(i: &[u8]) -> IResult<&[u8], ParamInstance, ET> {
+    param_inst_type.then(id_list).map(|(a, b)| ParamInstance(a, b)).parse(i)
 }
 
-fn function_formal_list<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], FunctionFormalList<'a>, E> {
-    let param_formal_list = param_instance
-        .list1_sep_by(ctrl(';'))
-        .p()
-        .map(FunctionFormalList::Param);
-    let port = port_formal_list.map(FunctionFormalList::Port);
-    param_formal_list.or(port).parse(i)
-}
-
-fn method<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], Method<'a>, E> {
+fn method(i: &[u8]) -> IResult<&[u8], Method, ET> {
     let method_hse = ident
-        .then_ignore(ctrl('{'))
-        .then_cut(hse_body.then_ignore(ctrl('}')))
-        .map(|(a, b)| Method::Hse(a, b));
+        .then(ctrl('{'))
+        .then_cut(hse_body.then(ctrl('}')))
+        .map(|((a, b), (c, d))| Method::Hse(a, b, c, d));
     let assign = ident
-        .then_ignore(ctrl('='))
-        .then_cut(expr.then_ignore(ctrl(';')))
-        .map(|(a, b)| Method::Assign(a, b));
+        .then(ctrl('='))
+        .then_cut(expr.then(ctrl(';')))
+        .map(|((a, b), (c, d))| Method::Assign(a, b, c, d));
     let macro_ = kw("macro")
-        .ignore_then_cut(
-            ident
-                .then(port_formal_list.opt().parened())
-                .then(hse_body.opt().braced()),
-        )
-        .map(|((a, b), c)| Method::Macro(a, b, c));
+        .then_cut(ident.then(parened_port_formal_list).then(hse_body.opt().braced()))
+        .map(|(a, ((b, c), (d, e, f)))| Method::Macro(a, b, c, d, e, f));
     method_hse.or(assign).or(macro_).parse(i)
 }
 
-fn proclike_body<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], ProclikeBody<'a>, E> {
-    let one_override = user_type.then(ident.list1_sep_by(ctrl(',')).p());
-    let opt_overrides = one_override.many1().delim_by(ctrl2('+', '{'), ctrl('}')).opt();
+fn proclike_body(i: &[u8]) -> IResult<&[u8], ProclikeBody, ET> {
+    // user_type.then(ident.list1_sep_by(ctrl(',')).p());
+    let one_override = physical_inst_type
+        .then(ident.list1_sep_by(ctrl(',')).p())
+        .map(|(a, b)| OverrideOneSpec(a, b));
+    let overrides_block = one_override
+        .many1()
+        .delim_by(ctrl2('+', '{'), ctrl('}'))
+        .map(|(a, b, c)| OverrideSpec(a, b, c));
 
-    let methods_body = kw("methods").ignore_then(method.many1().braced());
+    let methods_body = kw("methods")
+        .then_cut(method.many1().braced())
+        .map(|(a, (b, c, d))| MethodsBody(a, b, c, d));
 
     // after the base items, either there is a methods_body next (begining with kw `methods`), or there is a close brace
-    let end_base_items_checker = || peek(kw("methods").value(()).or(ctrl('}').p().value(())));
 
-    let with_body = opt_overrides
+    let with_body = opt(overrides_block)
         .then(
             base_item
                 .many0()
-                .terminated_fn(end_base_items_checker)
-                .then(methods_body.opt())
+                .term_by_peek_alt2(kw("methods"), ctrl('}'))
+                .then_opt(methods_body)
                 .braced(),
         )
-        .map(|(a, (b, c))| ProclikeBody::WithBody(a, b, c));
+        .map(|(a, (b, (c, d), e))| ProclikeBody::WithBody(a, b, c, d, e));
 
-    let no_body = ctrl(';').p().map(|_| ProclikeBody::NoBody);
+    let no_body = ctrl(';').map(|_| ProclikeBody::NoBody);
 
     no_body.or(with_body).parse(i)
 }
 
 // TODO add a check in the next pass that (1) there is exactly 1 chp block per function and (2) that it comes last
-fn func_body<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], FuncBody<'a>, E> {
-    proclike_body(i)
+fn func_body(i: &[u8]) -> IResult<&[u8], FuncBody, ET> {
+    proclike_body.map(FuncBody).parse(i)
 }
 
 // This is closly coupled to the "top_items" parser below (in particular, where the "cut" is placed)
-fn templateable_def<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], TempaltedDef<'a>, E> {
-    let def_or_proc = kw("defproc")
-        .value(KwProclike::DefProc)
-        .or(kw("defcell").value(KwProclike::DefCell))
-        .or(kw("defchan").value(KwProclike::DefChan))
-        .or(kw("defdata").value(KwProclike::DefData));
+fn templateable_def(i: &[u8]) -> IResult<&[u8], TempaltedDef, ET> {
+    let def_or_proc = alt((
+        kw("defproc").map(KwProclike::DefProc),
+        kw("defcell").map(KwProclike::DefCell),
+        kw("defchan").map(KwProclike::DefChan),
+        kw("defdata").map(KwProclike::DefData),
+    ));
 
-    let id_map = ident.then_ignore(ctrl2('-', '>')).then(ident);
-    let interface_spec = iface_inst_type
+    let id_map = ident
+        .then(ctrl2('-', '>'))
+        .then(ident)
+        .map(|((a, b), c)| IdMap(a, b, c));
+    let interface_spec_item = iface_inst_type
         .then(id_map.list1_sep_by(ctrl(',')).braced())
-        .list1_sep_by(ctrl(','))
-        .p();
+        .map(|(a, (b, c, d))| InterfaceSpecItem(a, b, c, d));
+    let interface_spec = interface_spec_item.list1_sep_by(ctrl(',')).p().map(InterfaceSpec);
 
     let def_proclike_after_spec = def_or_proc
-        .then_cut(tuple((
-            ident,
-            ctrl2('<', ':').ignore_then(physical_inst_type).opt(),
-            port_formal_list.opt().parened(),
-            ctrl2(':', '>').ignore_then(interface_spec).opt(),
-            proclike_body,
-        )))
-        .map(|(a, (b, c, d, e, f))| TempaltedDef::Proclike((a, b, c, d, e, f)));
-    let def_func_after_spec = kw("function")
-        .ignore_then_cut(
+        .then_cut(
             ident
-                .then(function_formal_list.parened())
-                .then_ignore(ctrl(':'))
+                .then_opt(ctrl2('<', ':').then(physical_inst_type))
+                .then(parened_port_formal_list)
+                .then_opt(ctrl2(':', '>').then(interface_spec))
+                .then(proclike_body),
+        )
+        .map(|(a, ((((b, c), d), e), f))| DefProclike(a, b, c, d, e, f));
+    let def_func_after_spec = kw("function")
+        .then_cut(
+            ident
+                .then(parened_port_formal_list)
+                .then(ctrl(':'))
                 .then(func_ret_type)
                 .then(func_body),
         )
-        .map(|(((a, b), c), d)| TempaltedDef::Func((a, b, c, d)));
+        .map(|(a, ((((b, c), d), e), f))| DefFunc(a, b, c, d, e, f));
     let def_iface_after_spec = kw("interface")
-        .ignore_then(ident)
-        .then(port_formal_list.opt().parened())
-        .then_ignore(ctrl(';'))
-        .map(TempaltedDef::IFace);
-    def_proclike_after_spec
-        .or(def_func_after_spec)
-        .or(def_iface_after_spec)
-        .parse(i)
+        .then_cut(ident.then(parened_port_formal_list).then(ctrl(';')))
+        .map(|(a, ((b, c), d))| DefIFace(a, b, c, d));
+    alt((
+        def_proclike_after_spec.map(TempaltedDef::Proclike),
+        def_func_after_spec.map(TempaltedDef::Func),
+        def_iface_after_spec.map(TempaltedDef::IFace),
+    ))
+    .parse(i)
 }
 
-fn def_templated<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], TopItem<'a>, E> {
+fn def_templated(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
     // There are three cases for a "def_templated" block. We break them out here so that "cut"
     // provides nice error messages at this level of branching.
 
     // Option 1: `export [template_spec] templatedable_def`
     let def_templated1 = kw("export")
-        .ignore_then_cut(
-            kw("template")
-                .ignore_then(param_instance.list1_sep_by(ctrl(';')).ang_braced())
-                .opt()
-                .then(templateable_def),
+        .then_cut(
+            opt(kw("template")
+                .then(param_instance.list1_sep_by(ctrl(';')).ang_braced())
+                .map(|(a, (b, c, d))| (a, b, c, d)))
+            .then(templateable_def),
         )
-        .map(|(params, def)| TopItem::DefTemplated((true, params), def))
+        .map(|(a, (b, c))| TopItem::DefTemplated(OptTemplateSpec(Some(a), b), c))
         .context("define");
 
     // Option 2: `template_spec templatedable_def`
     let def_templated2 = kw("template")
-        .ignore_then_cut(
+        .then_cut(
             param_instance
                 .list1_sep_by(ctrl(';'))
                 .ang_braced()
                 .then(templateable_def),
         )
-        .map(|(params, def)| TopItem::DefTemplated((false, Some(params)), def))
+        .map(|(a, ((b, c, d), e))| TopItem::DefTemplated(OptTemplateSpec(None, Some((a, b, c, d))), e))
         .context("define");
 
     // Option 3: `templatedable_def`
     let def_templated3 = templateable_def
-        .map(|def| TopItem::DefTemplated((false, None), def))
+        .map(|a| TopItem::DefTemplated(OptTemplateSpec(None, None), a))
         .context("define");
 
     alt((def_templated1, def_templated2, def_templated3))
@@ -861,37 +1055,35 @@ fn def_templated<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], TopItem<'a>, E
         .parse(i)
 }
 
-fn new_namespace<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], TopItem<'a>, E> {
+fn new_namespace(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
     kw("export")
         .opt()
-        .map(|v| v.is_some())
-        .then_ignore(kw("namespace"))
-        .then(ident)
-        .then(top_item.many0().braced())
-        .map(|((export, ident), body)| TopItem::Namespace(NamespaceDecl { export, ident, body }))
+        .then(kw("namespace"))
+        .then_cut(ident.then(top_item.many0().braced()))
+        .map(|((a, b), (c, (d, e, f)))| TopItem::Namespace(NamespaceDecl(a, b, c, d, e, f)))
         .context("new namespace")
         .parse(i)
 }
 
-fn def_enum<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], TopItem<'a>, E> {
-    let no_body = ctrl(';').p().map(|_| EnumBody::NoBody);
+fn def_enum(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
+    let no_body = ctrl(';').map(|_| EnumBody::NoBody);
     let with_body = ident
         .list1_sep_by(ctrl(','))
         .braced()
-        .then_ignore(ctrl(';'))
-        .map(EnumBody::WithBody);
+        .then(ctrl(';'))
+        .map(|((a, b, c), d)| EnumBody::WithBody(a, b, c, d));
 
     let enum_body = no_body.or(with_body);
 
     kw("defenum")
-        .ignore_then(ident)
-        .then(enum_body)
+        .then_cut(ident.then(enum_body))
+        .map(|(a, (b, c))| DefEnum(a, b, c))
         .map(TopItem::DefEnum)
         .context("def enum")
         .parse(i)
 }
 
-fn import<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], TopItem<'a>, E> {
+fn import(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
     // imports_opens: {t-rec}
     //               import_open_item imports_opens
     //              | import_open_item
@@ -901,43 +1093,35 @@ fn import<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], TopItem<'a>, E> {
     // import_item: "import" STRING ";"
     //            | "import" [ "::" ] { ID "::" }* [ "->" ID ] ";"
     //            | "import" ID "=>" ID ";"
-    let import_string = string.map(TopItem::ImportString);
+    let import_string = string.map(Import::String);
 
     let import_namespace = qualified_name
-        .then(ctrl2('-', '>').ignore_then(ident).opt())
-        .map(|(ns, i)| TopItem::ImportNamespace(ns, i));
+        .then_opt(ctrl2('-', '>').then(ident))
+        .map(|(ns, i)| Import::Namespace(ns, i));
 
     let import_ident = ident
-        .then_ignore(ctrl2('=', '>'))
+        .then(ctrl2('=', '>'))
         .then(ident)
-        .map(|(i1, i2)| TopItem::ImportIdent(i1, i2));
+        .map(|((a, b), c)| Import::Ident(a, b, c));
 
     kw("import")
-        .ignore_then_cut(
-            import_string
-                .or(import_namespace)
-                .or(import_ident)
-                .then_ignore(ctrl(';')),
-        )
+        .then_cut(import_string.or(import_namespace).or(import_ident).then(ctrl(';')))
+        .map(|(a, (b, c))| TopItem::Import(a, b, c))
         .context("import")
         .parse(i)
 }
 
-fn open<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], TopItem<'a>, E> {
+fn open(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
     // open_item: "open" qualified_ns "->" ID ";"
     //          | "open" qualified_ns ";"
     kw("open")
-        .ignore_then_cut(
-            qualified_name
-                .then(ctrl2('-', '>').ignore_then(ident).opt())
-                .then_ignore(ctrl(';')),
-        )
-        .map(|(ns, i)| TopItem::Open(ns, i))
+        .then_cut(qualified_name.then_opt(ctrl2('-', '>').then(ident)).then(ctrl(';')))
+        .map(|(a, ((b, c), d))| TopItem::Open(a, b, c, d))
         .context("open")
         .parse(i)
 }
 
-pub fn top_item<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], TopItem<'a>, E> {
+pub fn top_item(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
     let alias_conn_or_inst = alias_conn_or_inst.map(|v| match v {
         AliasConnOrInst::Alias(a) => TopItem::Alias(a),
         AliasConnOrInst::Connection(a) => TopItem::Connection(a),
@@ -948,8 +1132,13 @@ pub fn top_item<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], TopItem<'a>, E>
         .context("top level item")
         .parse(i)
 }
-pub fn top_level<'a, E: EE<'a>>(i: &'a [u8]) -> nom::IResult<&'a [u8], Vec<TopItem<'a>>, E> {
-    top_item.many0().terminated_fn(|| eof).context("top level").parse(i)
+pub fn top_level(i: &[u8]) -> nom::IResult<&[u8], Vec<TopItem>, ET> {
+    top_item
+        .many0()
+        .terminated_fn(|| eof)
+        .map(|(a, _)| a)
+        .context("top level")
+        .parse(i)
 }
 
 // short for alias_conn_or_inst

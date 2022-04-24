@@ -1,22 +1,28 @@
 use super::basic::{ast::*, *};
-use crate::parser::utils::{MyParserExt, ParserExt2, EE};
+use crate::parser::utils::{MyParserExt, ParserExt2, ET};
 use nom::{
     branch::alt,
-    combinator::{map, not, opt, peek},
-    sequence::{pair, preceded, terminated, tuple},
+    combinator::{not, peek},
+    sequence::tuple,
     IResult, Parser,
 };
 use nom_supreme::parser_ext::ParserExt;
 
 mod lang_chp_hse {
     use super::*;
-    use crate::parser::utils::Unterm;
+    use crate::parser::utils::{SepList1, Unterm};
 
     pub mod ast {
         use super::*;
 
-        pub type LangChp<'a> = (Option<SupplySpec<'a>>, Option<ChpItemList<'a>>);
-        pub type ChpItemList<'a> = Vec<Vec<ChpItem<'a>>>;
+        #[derive(Debug)]
+        pub struct LangChp<'a>(
+            pub Kw<'a>,
+            pub Option<SupplySpec<'a>>,
+            pub CtrlLBrace<'a>,
+            pub Option<ChpItemList<'a>>,
+            pub CtrlRBrace<'a>,
+        );
 
         #[derive(Debug, Copy, Clone)]
         pub enum SemiOrComma {
@@ -25,29 +31,50 @@ mod lang_chp_hse {
         }
 
         #[derive(Debug)]
-        pub enum ChpItem<'a> {
-            Stmt(Option<Ident<'a>>, ChpStmt<'a>),
-            MacroLoop(MacroLoop<'a, SemiOrComma, (), ChpItemList<'a>>),
-        }
+        pub struct ChpItem<'a>(pub Option<(Ident<'a>, CtrlColon<'a>)>, pub ChpStmt<'a>);
+        pub type ChpItemList<'a> = SepList1<SepList1<ChpItem<'a>, CtrlComma<'a>>, CtrlSemi<'a>>;
 
         #[derive(Debug)]
-        pub enum AssignStmt<'a> {
-            Assign(ExprId<'a>, Expr<'a>),
-            Bool(ExprId<'a>, Dir),
-        }
+        pub struct AssignStmt<'a>(pub ExprId<'a>, pub Ctrl<'a> /* := */, pub Expr<'a>);
+        #[derive(Debug)]
+        pub struct AssignBoolDirStmt<'a>(pub ExprId<'a>, pub (Dir, Ctrl<'a>));
+
+        #[derive(Debug)]
+        pub struct ChpMacroLoop<'a>(
+            pub CtrlLParen<'a>,
+            pub (SemiOrComma, Ctrl<'a>),
+            pub Ident<'a>,
+            pub CtrlColon<'a>,
+            pub ExprRange<'a>,
+            pub CtrlColon<'a>,
+            pub ChpItemList<'a>,
+            pub CtrlRParen<'a>,
+        );
 
         #[derive(Debug)]
         pub enum ChpStmt<'a> {
             Assign(AssignStmt<'a>),
+            AssignBoolDir(AssignBoolDirStmt<'a>),
             SendStmt(SendStmt<'a>),
             RecvStmt(RecvStmt<'a>),
             Skip,
-            ParenedBody(ChpItemList<'a>),
-            FuncCall(Ident<'a>, Vec<ExprOrStr<'a>>),
-            DottedCall(BaseId<'a>, Ident<'a>, Vec<Expr<'a>>),
-            Select(ChpSelectStmt<'a>),
-            DoLoop(ChpDoLoop<'a>),
-            WhileLoop(ChpWhileLoop<'a>),
+            ParenedBody(CtrlLParen<'a>, ChpItemList<'a>, CtrlRParen<'a>),
+            FuncCall(
+                Ident<'a>,
+                CtrlLParen<'a>,
+                SepList1<ExprOrStr<'a>, CtrlComma<'a>>,
+                CtrlRParen<'a>,
+            ),
+            DottedCall(
+                BaseId<'a>,
+                CtrlDot<'a>,
+                Ident<'a>,
+                CtrlLParen<'a>,
+                SepList1<Expr<'a>, CtrlComma<'a>>,
+                CtrlRParen<'a>,
+            ),
+            BracketedStmt(ChpBracketedStmt<'a>),
+            MacroLoop(ChpMacroLoop<'a>),
         }
 
         #[derive(Debug, Copy, Clone)]
@@ -56,63 +83,122 @@ mod lang_chp_hse {
             Plus,
             Minus,
         }
-
         #[derive(Debug, Copy, Clone)]
         pub enum RecvType {
             Normal,
             Plus,
             Minus,
         }
-
-        #[derive(Debug)]
-        pub enum ChpRecvTypeCast<'a> {
-            Id(ExprId<'a>),
-            AsBool(ExprId<'a>),
-            AsInt(ExprId<'a>),
+        #[derive(Debug, Copy, Clone)]
+        pub enum RecvTypeCast<'a> {
+            AsInt(Kw<'a>, CtrlLParen<'a>, Ident<'a>, CtrlRParen<'a>),
+            AsBool(Kw<'a>, CtrlLParen<'a>, Ident<'a>, CtrlRParen<'a>),
+            Ident(Ident<'a>),
         }
-
-        pub type SendStmt<'a> = (
-            ExprId<'a>,
-            SendType,
-            Option<Expr<'a>>,
-            Option<(RecvType, ChpRecvTypeCast<'a>)>,
+        #[derive(Debug)]
+        pub struct SendStmt<'a>(
+            pub ExprId<'a>,
+            pub (SendType, Ctrl<'a>),
+            pub Option<Expr<'a>>,
+            pub Option<((RecvType, Ctrl<'a>), RecvTypeCast<'a>)>,
         );
-        pub type RecvStmt<'a> = (
-            ExprId<'a>,
-            RecvType,
-            Option<ChpRecvTypeCast<'a>>,
-            Option<(SendType, Expr<'a>)>,
+        #[derive(Debug)]
+        pub struct RecvStmt<'a>(
+            pub ExprId<'a>,
+            pub (RecvType, Ctrl<'a>),
+            pub Option<RecvTypeCast<'a>>,
+            pub Option<((SendType, Ctrl<'a>), Expr<'a>)>,
         );
 
         #[derive(Debug)]
         pub enum GuardedCmd<'a> {
-            Expr(Expr<'a>, ChpItemList<'a>),
-            Else(ChpItemList<'a>),
-            Macro(MacroLoop<'a, Ctrl<'a>, Expr<'a>, ChpItemList<'a>>),
+            Expr(Expr<'a>, CtrlLArrow<'a>, ChpItemList<'a>),
+            Else(Kw<'a>, CtrlLArrow<'a>, ChpItemList<'a>),
+            Macro(
+                CtrlLParen<'a>,
+                Ctrl<'a>, /* [] */
+                Ident<'a>,
+                CtrlColon<'a>,
+                ExprRange<'a>,
+                CtrlColon<'a>,
+                Expr<'a>,
+                CtrlLArrow<'a>,
+                ChpItemList<'a>,
+                CtrlRParen<'a>,
+            ),
         }
 
         #[derive(Debug)]
-        pub enum ChpSelectStmt<'a> {
-            Determ(Vec<GuardedCmd<'a>>),
-            NonDeterm(Vec<GuardedCmd<'a>>),
-            Expr(Expr<'a>),
+        pub enum ChpBracketedStmt<'a> {
+            DetermSelect(
+                CtrlLBracket<'a>,
+                SepList1<GuardedCmd<'a>, Ctrl<'a> /* [] */>,
+                CtrlRBracket<'a>,
+            ),
+            NonDetermSelect(
+                Ctrl<'a>, /* [| */
+                SepList1<GuardedCmd<'a>, Ctrl<'a> /* [] */>,
+                Ctrl<'a>, /* |] */
+            ),
+            Wait(CtrlLBracket<'a>, Expr<'a>, CtrlRBracket<'a>),
+            DoLoop(
+                Ctrl<'a>, /* *[ */
+                ChpItemList<'a>,
+                Option<(Ctrl<'a> /* <- */, Expr<'a>)>,
+                CtrlRBracket<'a>,
+            ),
+            WhileLoop(
+                Ctrl<'a>, /* *[ */
+                SepList1<GuardedCmd<'a>, Ctrl<'a> /* [] */>,
+                CtrlRBracket<'a>,
+            ),
         }
-
-        pub type ChpDoLoop<'a> = (ChpItemList<'a>, Option<Expr<'a>>);
-        pub type ChpWhileLoop<'a> = Vec<GuardedCmd<'a>>;
 
         // Instead, HSE should be parsed like chp, and then checked afterwords that it is in the correct subset of chp
         #[derive(Debug)]
+        pub struct LabeledHseBody<'a>(
+            pub Ident<'a>,
+            pub CtrlColon<'a>,
+            pub HseItemList<'a>,
+            pub CtrlColon<'a>,
+            pub Ident<'a>,
+        );
+
+        #[derive(Debug)]
         pub enum HseBodies<'a> {
             Body(HseItemList<'a>),
-            Labeled(Vec<(Ident<'a>, HseItemList<'a>, Ident<'a>)>),
+            Labeled(SepList1<LabeledHseBody<'a>, CtrlSemi<'a>>),
         }
-
-        pub type HseItemList<'a> = ChpItemList<'a>;
-        pub type LangHse<'a> = (Option<SupplySpec<'a>>, Option<HseBodies<'a>>);
+        #[derive(Debug)]
+        pub struct HseItemList<'a>(pub ChpItemList<'a>);
+        #[derive(Debug)]
+        pub struct LangHse<'a>(
+            pub Kw<'a>,
+            pub Option<SupplySpec<'a>>,
+            pub CtrlLBrace<'a>,
+            pub Option<HseBodies<'a>>,
+            pub CtrlRBrace<'a>,
+        );
     }
 
     use ast::*;
+
+    fn send_type(i: &[u8]) -> IResult<&[u8], (SendType, Ctrl), ET> {
+        alt((
+            ctrl2('!', '+').map(|v| (SendType::Plus, v)),
+            ctrl2('!', '-').map(|v| (SendType::Minus, v)),
+            ctrl('!').map(|v| (SendType::Normal, v)),
+        ))
+        .parse(i)
+    }
+    fn recv_type(i: &[u8]) -> IResult<&[u8], (RecvType, Ctrl), ET> {
+        alt((
+            ctrl2('?', '+').map(|v| (RecvType::Plus, v)),
+            ctrl2('?', '-').map(|v| (RecvType::Minus, v)),
+            ctrl('?').map(|v| (RecvType::Normal, v)),
+        ))
+        .parse(i)
+    }
 
     // chp_body: { chp_comma_list ";" }*
     // chp_comma_list: { chp_body_item "," }*
@@ -128,124 +214,151 @@ mod lang_chp_hse {
     //          | "(" chp_body ")"
     //          | ID "(" { chp_log_item "," }* ")"
     //          | base_id "." ID "(" [ { expr "," }** ] ")"
-    pub fn chp_item<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], ChpItem<'a>, E> {
-        let semi_or_comma = alt((
-            ctrl(';').p().value(SemiOrComma::Semi),
-            ctrl(',').p().value(SemiOrComma::Comma),
-        ));
-        let parened_body = chp_item_list1().parened();
-        let func_call = ident.and(expr_or_str.list1_sep_by(ctrl(',')).parened());
-        let dotted_call = base_id
-            .then_ignore(ctrl('.'))
-            .then(ident)
-            .then(expr.list1_sep_by(ctrl(',')).parened());
-        let chp_stmt = alt((
-            send_stmt.map(ChpStmt::SendStmt),
-            recv_stmt.map(ChpStmt::RecvStmt),
-            assign_stmt.map(ChpStmt::Assign),
-            kw("skip").map(|_| ChpStmt::Skip),
-            parened_body.map(ChpStmt::ParenedBody),
-            func_call.map(|(a, b)| ChpStmt::FuncCall(a, b)), // TODO make this a list0_sep_by
-            dotted_call.map(|((a, b), c)| ChpStmt::DottedCall(a, b, c)),
-            chp_select_stmt.map(|a| ChpStmt::Select(a)),
-            chp_do_or_while_loop.map(|a| match a {
-                ChpDoOrWhileLoop::Do(a) => ChpStmt::DoLoop(a),
-                ChpDoOrWhileLoop::While(a) => ChpStmt::WhileLoop(a),
-            }),
-        ));
-        let labeled_stmt = ident.then_ignore(ctrl(':')).opt().then(chp_stmt);
+    pub fn recv_type_cast(i: &[u8]) -> IResult<&[u8], RecvTypeCast, ET> {
         alt((
-            // special case to make sure it parses unlabeled assignments correctly
-            assign_stmt.map(|stmt| ChpItem::Stmt(None, ChpStmt::Assign(stmt))),
-            // then the general case
-            labeled_stmt.map(|(label, stmt)| ChpItem::Stmt(label, stmt)),
-            ctrl('(')
-                .precedes(tuple((
-                    semi_or_comma,
-                    ident,
-                    preceded(ctrl(':'), expr_range),
-                    preceded(ctrl(':'), none),
-                    chp_item_list1().terminated(ctrl(')')),
-                )))
-                .map(ChpItem::MacroLoop),
+            kw("bool")
+                .then_cut(ident.parened())
+                .map(|(a, (b, c, d))| RecvTypeCast::AsBool(a, b, c, d)),
+            kw("int")
+                .then_cut(ident.parened())
+                .map(|(a, (b, c, d))| RecvTypeCast::AsInt(a, b, c, d)),
+            ident.map(RecvTypeCast::Ident),
+        ))
+        .parse(i)
+    }
+    pub fn chp_stmt(i: &[u8]) -> IResult<&[u8], ChpStmt, ET> {
+        // These all begin with a unique token
+        // skip -> `skip`   `[` or `*[`
+        let skip_stmt = kw("skip").context("skip_stmt").map(|_| ChpStmt::Skip);
+        let chp_select_or_loop_stmt = chp_select_or_loop_stmt
+            .context("chp_select_or_loop_stmt")
+            .map(ChpStmt::BracketedStmt);
+
+        // The next two both begin with a `(`. If it is followed by a `;` or a `,`, then it is a
+        // macro loop. Otherwise, it is a parened body
+        let semi_or_comma = alt((
+            ctrl(';').map(|v| (SemiOrComma::Semi, v)),
+            ctrl(',').map(|v| (SemiOrComma::Comma, v)),
+        ));
+        let macro_loop = ctrl('(')
+            .then(semi_or_comma)
+            .then_cut(
+                ident
+                    .then(ctrl(':'))
+                    .then(expr_range)
+                    .then(ctrl(':'))
+                    .then(chp_item_list1().term_by(ctrl(')'))),
+            )
+            .context("macro_loop")
+            .map(|((a, b), ((((c, d), e), f), (g, h)))| ChpMacroLoop(a, b, c, d, e, f, g, h))
+            .map(ChpStmt::MacroLoop);
+
+        let parened_body = ctrl('(')
+            .then_cut(chp_item_list1().term_by(ctrl(')')).verify(|v| v.0.items.len() >= 2))
+            .map(|(a, (b, c))| ChpStmt::ParenedBody(a, b, c))
+            .context("parened body");
+
+        // This goes `ident (` at the start
+        let func_call = ident
+            .then(ctrl('('))
+            .then_cut(expr_or_str.list1_sep_by(ctrl(',')).term_by(ctrl(')')))
+            .map(|((a, b), (c, d))| ChpStmt::FuncCall(a, b, c, d))
+            .context("func_call");
+
+        // otherwise, it should begin with a expr_id. Therefore, to get good error messages, we will
+        // parse an expr_id, and then attempt to parse the rest of one of these expressions
+        pub enum ChpStmtAfterExprId<'a> {
+            Assign(Ctrl<'a> /* := */, Expr<'a>),
+            AssignBoolDir((Dir, Ctrl<'a>)),
+            SendStmt(
+                (SendType, Ctrl<'a>),
+                Option<Expr<'a>>,
+                Option<((RecvType, Ctrl<'a>), RecvTypeCast<'a>)>,
+            ),
+            RecvStmt(
+                (RecvType, Ctrl<'a>),
+                Option<RecvTypeCast<'a>>,
+                Option<((SendType, Ctrl<'a>), Expr<'a>)>,
+            ),
+        }
+
+        let send_stmt_after_ei = send_type
+            .then_cut(expr.opt().then_opt(recv_type.then_cut(recv_type_cast)))
+            .map(|(a, (b, c))| ChpStmtAfterExprId::SendStmt(a, b, c));
+
+        let recv_stmt_after_ei = recv_type
+            .then_cut(recv_type_cast.opt().then_opt(send_type.then_cut(expr)))
+            .map(|(a, (b, c))| ChpStmtAfterExprId::RecvStmt(a, b, c));
+
+        let assign_stmt_after_ei = ctrl2(':', '=')
+            .then(expr)
+            .map(|(a, b)| ChpStmtAfterExprId::Assign(a, b));
+        let assign_bool_dir_stmt_after_ei = dir.map(ChpStmtAfterExprId::AssignBoolDir);
+
+        let chp_stmt_after_ei = expr_id
+            .then(alt((
+                uncut(send_stmt_after_ei),
+                uncut(recv_stmt_after_ei),
+                uncut(assign_stmt_after_ei),
+                uncut(assign_bool_dir_stmt_after_ei),
+            )))
+            .context("chp stmt after expr id")
+            .map(|(a, b)| match b {
+                ChpStmtAfterExprId::Assign(b, c) => ChpStmt::Assign(AssignStmt(a, b, c)),
+                ChpStmtAfterExprId::AssignBoolDir(b) => ChpStmt::AssignBoolDir(AssignBoolDirStmt(a, b)),
+                ChpStmtAfterExprId::SendStmt(b, c, d) => ChpStmt::SendStmt(SendStmt(a, b, c, d)),
+                ChpStmtAfterExprId::RecvStmt(b, c, d) => ChpStmt::RecvStmt(RecvStmt(a, b, c, d)),
+            });
+
+        // The other four begin with a base_id (meaning an ident followed by zero or mode bracketed ranges)
+        // e.g. ident[a][b..c][d+e..f{g..h}].
+        // If it starts with an identifier followed by a `[` or a `.`, it is a dotted_call
+        let dotted_call = base_id
+            .then(ctrl('.'))
+            .then(ident)
+            .then(expr.list1_sep_by(ctrl(',')).parened())
+            .context("dotted_call")
+            .map(|(((a, b), c), (d, e, f))| ChpStmt::DottedCall(a, b, c, d, e, f));
+
+        // Now put all the parsers together in a big alt block
+        alt((
+            // this is just a unique keyword
+            skip_stmt,
+            // these begin with unique control sequences ('[', '*[', and '(') respectively
+            chp_select_or_loop_stmt,
+            macro_loop, // goes before parened body
+            parened_body,
+            // this start with an `ident (`
+            func_call,
+            // This rest of them start with an base_id or expr_id
+            uncut(dotted_call),
+            uncut(chp_stmt_after_ei),
+        ))
+        .context("chp stmt")
+        .parse(i)
+    }
+    pub fn chp_item(i: &[u8]) -> IResult<&[u8], ChpItem, ET> {
+        let is_labeled_detector = peek(ident.then(ctrl(':')).then(not(ctrl('='))));
+        let label = ident.then(ctrl(':'));
+        alt((
+            // If it begins `ident : NOT(=)` then it is a labeled statement
+            is_labeled_detector
+                .ignore_then_cut(label.then(chp_stmt))
+                .map(|(label, stmt)| ChpItem(Some(label), stmt)),
+            // Otherwise it is an unlabeled statement
+            chp_stmt.map(|stmt| ChpItem(None, stmt)),
         ))
         .parse(i)
     }
 
-    fn chp_item_list1<'a, E: EE<'a>>() -> Unterm<impl Parser<&'a [u8], Vec<ChpItem<'a>>, E>> {
+    fn chp_item_list1<'a>() -> Unterm<impl Parser<&'a [u8], SepList1<ChpItem<'a>, CtrlComma<'a>>, ET<'a>>> {
         let chp_comma_list = chp_item.list1_sep_by(ctrl(',')).p();
         chp_comma_list.list1_sep_by(ctrl(';'))
-    }
-
-    // gen_assignable_id: {excl} expr_id
-    //                  | "bool" "(" expr_id ")"
-    //                  | "int" "(" expr_id ")"
-    fn chp_recv_type_cast<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], ChpRecvTypeCast<'a>, E> {
-        alt((
-            expr_id.map(ChpRecvTypeCast::Id),
-            kw("bool").ignore_then(expr_id.parened()).map(ChpRecvTypeCast::AsBool),
-            kw("int").ignore_then(expr_id.parened()).map(ChpRecvTypeCast::AsInt),
-        ))
-        .parse(i)
-    }
-
-    // snd_type: {excl}
-    //          "!"
-    //         | "!+"
-    //         | "!-"
-    // rcv_type: {excl}
-    //          "?"
-    //         | "?+"
-    //         | "?-"
-    // recv_stmt: expr_id rcv_type [ gen_assignable_id ] [ snd_type expr ]
-    // send_stmt: expr_id snd_type [ expr ] [ rcv_type gen_assignable_id ]
-    fn snd_type<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], SendType, E> {
-        alt((
-            ctrl2('!', '+').p().value(SendType::Plus),
-            ctrl2('!', '-').p().value(SendType::Minus),
-            ctrl('!').p().value(SendType::Normal),
-        ))
-        .parse(i)
-    }
-
-    fn rcv_type<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], RecvType, E> {
-        alt((
-            ctrl2('?', '+').p().value(RecvType::Plus),
-            ctrl2('?', '-').p().value(RecvType::Minus),
-            ctrl('?').p().value(RecvType::Normal),
-        ))
-        .parse(i)
-    }
-
-    fn send_stmt<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], SendStmt<'a>, E> {
-        expr_id
-            .then(snd_type)
-            .then(expr.opt())
-            .then(rcv_type.then(chp_recv_type_cast).opt())
-            .map(|(((a, b), c), d)| (a, b, c, d))
-            .parse(i)
-    }
-
-    fn recv_stmt<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], RecvStmt<'a>, E> {
-        expr_id
-            .then(rcv_type)
-            .then(chp_recv_type_cast.opt())
-            .then(snd_type.then(expr).opt())
-            .map(|(((a, b), c), d)| (a, b, c, d))
-            .parse(i)
     }
 
     // assign_stmt: expr_id ":=" expr
     //            | expr_id dir
     //            ;
-    fn assign_stmt<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], AssignStmt<'a>, E> {
-        expr_id
-            .then_ignore(ctrl2(':', '='))
-            .then(expr)
-            .map(|(a, b)| AssignStmt::Assign(a, b))
-            .or(expr_id.then(dir).map(|(a, b)| AssignStmt::Bool(a, b)))
-            .parse(i)
-    }
 
     // guarded_cmd: {excl}
     //             expr "->" chp_body
@@ -259,61 +372,80 @@ mod lang_chp_hse {
     //          | "*[" { guarded_cmd "[]" }* "]"
 
     // TODO come up with a way to make this handle the specific expected terminators
-    fn guarded_cmd<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], GuardedCmd<'a>, E> {
-        alt((
-            expr.then_ignore(ctrl2('-', '>'))
-                .then(chp_item_list1().p())
-                .map(|(a, b)| GuardedCmd::Expr(a, b)),
-            kw("else")
-                .ignore_then(ctrl2('-', '>'))
-                .ignore_then(chp_item_list1().p())
-                .map(GuardedCmd::Else),
-            ctrl('(')
-                .precedes(tuple((
-                    ctrl2('[', ']'),
-                    ident,
-                    preceded(ctrl(':'), expr_range),
-                    preceded(ctrl(':'), expr.then_ignore(ctrl2('-', '>'))),
-                    chp_item_list1().terminated(ctrl(')')),
-                )))
-                .context("macro loop")
-                .map(GuardedCmd::Macro),
-        ))
-        .parse(i)
+
+    fn guarded_cmd(i: &[u8]) -> IResult<&[u8], GuardedCmd, ET> {
+        let macro_branch = ctrl('(')
+            .then(ctrl2('[', ']'))
+            .then_cut(tuple((
+                ident,
+                ctrl(':'),
+                expr_range,
+                ctrl(':'),
+                expr,
+                ctrl2('-', '>'),
+                chp_item_list1().term_by(ctrl(')')),
+            )))
+            .context("macro loop")
+            .map(|((a, b), (c, d, e, f, g, h, (i, j)))| GuardedCmd::Macro(a, b, c, d, e, f, g, h, i, j));
+        let else_branch = kw("else")
+            .then_cut(ctrl2('-', '>').then(chp_item_list1().p()))
+            .map(|(a, (b, c))| GuardedCmd::Else(a, b, c));
+        let normal_branch = expr
+            .then(ctrl2('-', '>'))
+            .then(chp_item_list1().p())
+            .map(|((a, b), c)| GuardedCmd::Expr(a, b, c));
+
+        alt((macro_branch, else_branch, normal_branch)).parse(i)
     }
 
-    fn chp_select_stmt<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], ChpSelectStmt<'a>, E> {
-        let nondet_select_stmt = guarded_cmd
-            .list1_sep_by(ctrl2('[', ']'))
-            .delim_by(ctrl2('[', '|'), ctrl2('|', ']'));
-        let det_select_stmt = guarded_cmd.list1_sep_by(ctrl2('[', ']')).bracketed();
-        alt((
-            nondet_select_stmt.map(ChpSelectStmt::NonDeterm),
-            det_select_stmt.map(ChpSelectStmt::Determ),
-            expr.bracketed().map(ChpSelectStmt::Expr),
-        ))
-        .parse(i)
-    }
+    // TODO the is probably a better way of doing this (for the purposes of extracting errors?)
+    fn chp_select_or_loop_stmt(i: &[u8]) -> IResult<&[u8], ChpBracketedStmt, ET> {
+        #[derive(Copy, Clone)]
+        enum Tp {
+            DetermSelect,
+            NonDetermSelect,
+            WhileLoop,
+        }
+        // First try extracting a loop/select statement with guards
+        let open = alt((
+            ctrl2('*', '[').map(|v| (Tp::WhileLoop, v)),
+            ctrl2('[', '|').map(|v| (Tp::NonDetermSelect, v)),
+            ctrl('[').map(|v| (Tp::DetermSelect, v)),
+        ));
 
-    enum ChpDoOrWhileLoop<'a> {
-        Do(ChpDoLoop<'a>),
-        While(ChpWhileLoop<'a>),
-    }
+        let loop_ = open
+            .then_cut(
+                guarded_cmd
+                    .list1_sep_by(ctrl2('[', ']'))
+                    .term_by(ctrl2('|', ']').or(ctrl(']'))),
+            )
+            .map(|((tp, a), (b, c))| match tp {
+                // TODO handle closing symbol correctly
+                Tp::DetermSelect => ChpBracketedStmt::DetermSelect(a, b, c),
+                Tp::NonDetermSelect => ChpBracketedStmt::NonDetermSelect(a, b, c),
+                Tp::WhileLoop => ChpBracketedStmt::WhileLoop(a, b, c),
+            })
+            .context("while loop or select");
 
-    fn chp_do_or_while_loop<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], ChpDoOrWhileLoop<'a>, E> {
-        let do_loop_test = peek(chp_item.then(not(ctrl2('<', '-'))));
-        let do_loop = do_loop_test
-            .ignore_then_cut(
+        // the try parsing a wait statement
+        let wait = ctrl('[')
+            .then_cut(expr.then(ctrl(']')))
+            .map(|(a, (b, c))| ChpBracketedStmt::Wait(a, b, c))
+            .context("wait");
+
+        // the try parsing a do-loop
+        let do_loop = ctrl2('*', '[')
+            .then_cut(
                 chp_item_list1()
                     .term_by_recog_alt2(ctrl2('<', '-'), ctrl(']'))
-                    .and(ctrl2('<', '-').precedes(expr).opt().terminated(ctrl(']'))),
+                    .then_opt(ctrl2('<', '-').then_cut(expr))
+                    .then(ctrl(']')),
             )
-            .map(ChpDoOrWhileLoop::Do);
-        let while_loop = guarded_cmd
-            .list1_sep_by(ctrl2('[', ']'))
-            .term_by(ctrl(']'))
-            .map(ChpDoOrWhileLoop::While);
-        ctrl2('*', '[').ignore_then_cut(do_loop.or(while_loop)).parse(i)
+            .map(|(a, ((b, c), d))| ChpBracketedStmt::DoLoop(a, b, c, d))
+            .context("do loop");
+
+        // at most one of these should succeed. If more do, raise an error! Otherwise, return the successful one
+        alt((uncut(wait), uncut(do_loop), uncut(loop_))).parse(i)
     }
 
     // hse_bodies: hse_body
@@ -323,17 +455,17 @@ mod lang_chp_hse {
     // hse_body: { hse_comma_item ";" }*
     // hse_comma_item: { hse_body_item "," }*
     // Instead, HSE should be parsed like chp, and then checked afterwords that it is in the correct subset of chp
-    pub fn hse_body<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], HseItemList<'a>, E> {
-        chp_item_list1().parse(i)
+    pub fn hse_body(i: &[u8]) -> IResult<&[u8], HseItemList, ET> {
+        chp_item_list1().p().map(HseItemList).parse(i)
     }
 
-    fn hse_bodies<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], HseBodies<'a>, E> {
+    fn hse_bodies(i: &[u8]) -> IResult<&[u8], HseBodies, ET> {
         let labeled_body = ident
-            .then_ignore(ctrl(':'))
+            .then(ctrl(':'))
             .then(hse_body)
-            .then_ignore(ctrl(':'))
+            .then(ctrl(':'))
             .then(ident)
-            .map(|((a, b), c)| (a, b, c));
+            .map(|((((a, b), c), d), e)| LabeledHseBody(a, b, c, d, e));
         let labeled_bodies = labeled_body.list1_sep_by(ctrl(';')).p().map(HseBodies::Labeled);
         hse_body.map(HseBodies::Body).or(labeled_bodies).parse(i)
     }
@@ -341,17 +473,22 @@ mod lang_chp_hse {
     // lang_chp: "chp" [ supply_spec ] "{" [ chp_body ] "}"
     // lang_hse: "hse" [ supply_spec ] "{" [ hse_bodies ] "}"
     // Instead, HSE should be parsed like chp, and then checked afterwords that it is in the correct subset of chp
-    pub fn lang_hse<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], LangHse<'a>, E> {
+    pub fn lang_hse(i: &[u8]) -> IResult<&[u8], LangHse, ET> {
         kw("hse")
-            .ignore_then(supply_spec.opt())
+            .then_opt(supply_spec)
             .then(hse_bodies.opt().braced())
+            .map(|((a, b), (c, d, e))| LangHse(a, b, c, d, e))
             .context("hse block")
             .parse(i)
     }
 
-    pub fn lang_chp<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], LangChp<'a>, E> {
+    pub fn lang_chp(i: &[u8]) -> IResult<&[u8], LangChp, ET> {
         let block = supply_spec.opt().then(chp_item_list1().opt().braced());
-        kw("chp").ignore_then_cut(block).context("chp block").parse(i)
+        kw("chp")
+            .then_cut(block)
+            .map(|(a, (b, (c, d, e)))| LangChp(a, b, c, d, e))
+            .context("chp block")
+            .parse(i)
     }
 }
 
@@ -369,7 +506,14 @@ mod lang_prs {
             Hash,
         }
 
-        pub type SizeSpec<'a> = (Expr<'a>, Option<Expr<'a>>, Option<Ident<'a>>, Option<Expr<'a>>);
+        #[derive(Debug)]
+        pub struct SizeSpec<'a>(
+            pub CtrlLAngBrace<'a>,
+            pub Expr<'a>,
+            pub Option<(CtrlComma<'a>, Expr<'a>, Option<(CtrlComma<'a>, Ident<'a>)>)>,
+            pub Option<(CtrlSemi<'a>, Expr<'a>)>,
+            pub CtrlRAngBrace<'a>,
+        );
 
         #[derive(Debug)]
         pub enum TreeSubcktSpec<'a> {
@@ -378,18 +522,84 @@ mod lang_prs {
         }
 
         #[derive(Debug)]
+        pub struct PrsMacroLoop<'a>(
+            pub CtrlLParen<'a>,
+            pub Ident<'a>,
+            pub CtrlColon<'a>,
+            pub ExprRange<'a>,
+            pub CtrlColon<'a>,
+            pub PrsBody<'a>,
+            pub CtrlRParen<'a>,
+        );
+
+        #[derive(Debug)]
         pub enum PrsItem<'a> {
-            Rule(PrsExpr<'a>, ArrowKind, ExprId<'a>, Dir),
-            AtRule(PrsExpr<'a>, ArrowKind, Ident<'a>, Dir),
-            SubBlock(Ident<'a>, Option<TreeSubcktSpec<'a>>, PrsBody<'a>),
-            MacroRule(MacroLoop<'a, (), (), PrsBody<'a>>),
-            PassN(SizeSpec<'a>, (ExprId<'a>, ExprId<'a>, ExprId<'a>)),
-            PassP(SizeSpec<'a>, (ExprId<'a>, ExprId<'a>, ExprId<'a>)),
-            TransGate(SizeSpec<'a>, (ExprId<'a>, ExprId<'a>, ExprId<'a>, ExprId<'a>)),
+            Rule(PrsExpr<'a>, (ArrowKind, Ctrl<'a>), ExprId<'a>, (Dir, Ctrl<'a>)),
+            AtRule(
+                PrsExpr<'a>,
+                (ArrowKind, Ctrl<'a>),
+                CtrlAtSign<'a>,
+                Ident<'a>,
+                (Dir, Ctrl<'a>),
+            ),
+            SubBlock(
+                Ident<'a>,
+                Option<(CtrlLAngBrace<'a>, TreeSubcktSpec<'a>, CtrlRAngBrace<'a>)>,
+                CtrlLBrace<'a>,
+                PrsBody<'a>,
+                CtrlRBrace<'a>,
+            ),
+            MacroRule(PrsMacroLoop<'a>),
+            PassN(
+                Kw<'a>,
+                SizeSpec<'a>,
+                CtrlLParen<'a>,
+                ExprId<'a>,
+                CtrlComma<'a>,
+                ExprId<'a>,
+                CtrlComma<'a>,
+                ExprId<'a>,
+                CtrlRParen<'a>,
+            ),
+            PassP(
+                Kw<'a>,
+                SizeSpec<'a>,
+                CtrlLParen<'a>,
+                ExprId<'a>,
+                CtrlComma<'a>,
+                ExprId<'a>,
+                CtrlComma<'a>,
+                ExprId<'a>,
+                CtrlRParen<'a>,
+            ),
+            TransGate(
+                Kw<'a>,
+                SizeSpec<'a>,
+                CtrlLParen<'a>,
+                ExprId<'a>,
+                CtrlComma<'a>,
+                ExprId<'a>,
+                CtrlComma<'a>,
+                ExprId<'a>,
+                CtrlComma<'a>,
+                ExprId<'a>,
+                CtrlRParen<'a>,
+            ),
         }
 
-        pub type PrsBody<'a> = Vec<(Option<AttrList<'a>>, PrsItem<'a>)>;
-        pub type LangPrs<'a> = (Option<SupplySpec<'a>>, bool, PrsBody<'a>);
+        #[derive(Debug)]
+        pub struct PrsBodyRow<'a>(pub Option<BracketedAttrList<'a>>, pub PrsItem<'a>);
+        #[derive(Debug)]
+        pub struct PrsBody<'a>(pub Vec<PrsBodyRow<'a>>);
+        #[derive(Debug)]
+        pub struct LangPrs<'a>(
+            pub Kw<'a>,
+            pub Option<SupplySpec<'a>>,
+            pub Option<CtrlStar<'a>>,
+            pub CtrlLBrace<'a>,
+            pub PrsBody<'a>,
+            pub CtrlRBrace<'a>,
+        );
     }
 
     use ast::*;
@@ -398,11 +608,11 @@ mod lang_prs {
     //       "->"
     //      | "=>"
     //      | "#>"
-    fn arrow_kind<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], ArrowKind, E> {
+    fn arrow_kind(i: &[u8]) -> IResult<&[u8], (ArrowKind, Ctrl), ET> {
         alt((
-            ctrl2('-', '>').p().value(ArrowKind::Minus),
-            ctrl2('=', '>').p().value(ArrowKind::Equals),
-            ctrl2('#', '>').p().value(ArrowKind::Hash),
+            ctrl2('-', '>').map(|v| (ArrowKind::Minus, v)),
+            ctrl2('=', '>').map(|v| (ArrowKind::Equals, v)),
+            ctrl2('#', '>').map(|v| (ArrowKind::Hash, v)),
         ))
         .parse(i)
     }
@@ -422,94 +632,137 @@ mod lang_prs {
     // tree_subckt_spec: "<" expr ">"
     //                 | "<" STRING ">"
 
-    fn size_spec<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], SizeSpec<'a>, E> {
-        tuple((
-            expr,
-            ctrl(',').ignore_then(expr).opt(),
-            ctrl(',').ignore_then(ident).opt(),
-            ctrl(';').ignore_then(expr).opt(),
-        ))
-        .ang_braced()
-        .parse(i)
-    }
-
-    fn expr_id_comma_3_tuple<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], (ExprId<'a>, ExprId<'a>, ExprId<'a>), E> {
-        expr_id
-            .then_ignore(ctrl(','))
-            .then(expr_id)
-            .then_ignore(ctrl(','))
-            .then(expr_id)
-            .parened()
-            .map(|((a, b), c)| (a, b, c))
+    fn size_spec(i: &[u8]) -> IResult<&[u8], SizeSpec, ET> {
+        ctrl('<')
+            .then_cut(
+                expr.then_opt(ctrl(',').then_cut(expr.then_opt(ctrl(',').then_cut(ident))))
+                    .then_opt(ctrl(';').then_cut(expr)),
+            )
+            .then(ctrl('>'))
+            .map(|((a, ((b, c), d)), e)| SizeSpec(a, b, c.map(|(x, (y, z))| (x, y, z)), d, e))
             .parse(i)
     }
 
-    fn expr_id_comma_4_tuple<'a, E: EE<'a>>(
-        i: &'a [u8],
-    ) -> IResult<&'a [u8], (ExprId<'a>, ExprId<'a>, ExprId<'a>, ExprId<'a>), E> {
+    fn expr_id_comma_3_tuple(
+        i: &[u8],
+    ) -> IResult<&[u8], (CtrlLParen, ExprId, CtrlComma, ExprId, CtrlComma, ExprId, CtrlRParen), ET> {
         expr_id
-            .then_ignore(ctrl(','))
+            .then(ctrl(','))
             .then(expr_id)
-            .then_ignore(ctrl(','))
-            .then(expr_id)
-            .then_ignore(ctrl(','))
+            .then(ctrl(','))
             .then(expr_id)
             .parened()
-            .map(|(((a, b), c), d)| (a, b, c, d))
+            .map(|(a, ((((b, c), d), e), f), g)| (a, b, c, d, e, f, g))
             .parse(i)
     }
 
-    fn prs_item<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], PrsItem<'a>, E> {
-        let tree_subckt_spec = alt((
-            expr.ang_braced().map(TreeSubcktSpec::Expr),
-            string.ang_braced().map(TreeSubcktSpec::Str),
-        ));
-        let pass_n = kw("passn").ignore_then_cut(size_spec).then(expr_id_comma_3_tuple);
-        let pass_p = kw("passp").ignore_then_cut(size_spec).then(expr_id_comma_3_tuple);
-        let transgate = kw("transgate").ignore_then_cut(size_spec).then(expr_id_comma_4_tuple);
+    fn expr_id_comma_4_tuple(
+        i: &[u8],
+    ) -> IResult<
+        &[u8],
+        (
+            CtrlLParen,
+            ExprId,
+            CtrlComma,
+            ExprId,
+            CtrlComma,
+            ExprId,
+            CtrlComma,
+            ExprId,
+            CtrlRParen,
+        ),
+        ET,
+    > {
+        expr_id
+            .then(ctrl(','))
+            .then(expr_id)
+            .then(ctrl(','))
+            .then(expr_id)
+            .then(ctrl(','))
+            .then(expr_id)
+            .parened()
+            .map(|(a, ((((((b, c), d), e), f), g), h), i)| (a, b, c, d, e, f, g, h, i))
+            .parse(i)
+    }
+
+    fn prs_item(i: &[u8]) -> IResult<&[u8], PrsItem, ET> {
+        let pass_n = kw("passn")
+            .then_cut(size_spec.then(expr_id_comma_3_tuple))
+            .map(|(a, (b, (c, d, e, f, g, h, i)))| PrsItem::PassN(a, b, c, d, e, f, g, h, i));
+        let pass_p = kw("passp")
+            .then_cut(size_spec.then(expr_id_comma_3_tuple))
+            .map(|(a, (b, (c, d, e, f, g, h, i)))| PrsItem::PassP(a, b, c, d, e, f, g, h, i));
+        let transgate = kw("transgate")
+            .then_cut(size_spec.then(expr_id_comma_4_tuple))
+            .map(|(a, (b, (c, d, e, f, g, h, i, j, k)))| PrsItem::TransGate(a, b, c, d, e, f, g, h, i, j, k));
 
         let macro_loop = ctrl('(')
-            .ignore_then(tuple((
-                none,
+            .then(tuple((
                 ident,
-                ctrl(':').ignore_then(expr_range),
-                ctrl(':').ignore_then(none),
-                prs_body_row().many1().terminated(ctrl(')')),
+                ctrl(':'),
+                expr_range,
+                ctrl(':'),
+                prs_body_row().many1().term_by(ctrl(')')).map(|(a, b)| (PrsBody(a), b)),
             )))
-            .context("macro loop");
+            .context("macro loop")
+            .map(|(a, (b, c, d, e, (f, g)))| PrsMacroLoop(a, b, c, d, e, f, g))
+            .map(PrsItem::MacroRule);
 
-        let rule = prs_expr.then(arrow_kind).then(expr_id).then(dir);
-        let at_rule = prs_expr.then(arrow_kind).then_ignore(ctrl('@')).then(ident).then(dir);
+        let rule = prs_expr
+            .then(arrow_kind)
+            .then(expr_id)
+            .then(dir)
+            .map(|(((a, b), c), d)| PrsItem::Rule(a, b, c, d));
+        let at_rule = prs_expr
+            .then(arrow_kind)
+            .then(ctrl('@'))
+            .then(ident)
+            .then(dir)
+            .map(|((((a, b), c), d), e)| PrsItem::AtRule(a, b, c, d, e));
 
         // TODO add check for non-empty in follow-on pass
-        let sub_block = ident.then(tree_subckt_spec.opt()).then(prs_body_row().many0().braced());
+        let tree_subckt_spec = alt((
+            string.map(TreeSubcktSpec::Str),
+            expr_no_gt.cut().map(TreeSubcktSpec::Expr),
+        ));
+        let sub_block = ident
+            .then_opt(
+                ctrl('<')
+                    .then_cut(tree_subckt_spec.then(ctrl('>')))
+                    .map(|(x, (y, z))| (x, y, z)),
+            )
+            .then(prs_body_row().many0().braced())
+            .map(|((a, b), (c, d, e))| PrsItem::SubBlock(a, b, c, PrsBody(d), e));
 
         alt((
             // These three start with a unique keyword at the begining, so it is easy to apply the "cut" operator afterwords
-            pass_n.map(|(a, b)| PrsItem::PassN(a, b)),
-            pass_p.map(|(a, b)| PrsItem::PassP(a, b)),
-            transgate.map(|(a, b)| PrsItem::TransGate(a, b)),
+            pass_n,
+            pass_p,
+            transgate,
             // The other four are harder to tell apart. Both the macro-loop and the rule/at_rule can being with a paren.
             // Both rule/at_rule and sub-block being with a identifier.
-            macro_loop.map(PrsItem::MacroRule),
-            rule.map(|(((a, b), c), d)| PrsItem::Rule(a, b, c, d)),
-            at_rule.map(|(((a, b), c), d)| PrsItem::AtRule(a, b, c, d)),
-            sub_block.map(|((a, b), c)| PrsItem::SubBlock(a, b, c)),
+
+            // TODO apply a "longest of" here
+            uncut(macro_loop),
+            uncut(rule),
+            uncut(at_rule),
+            uncut(sub_block),
         ))
         .parse(i)
     }
 
-    fn prs_body_row<'a, E: EE<'a>>() -> impl Parser<&'a [u8], (Option<AttrList<'a>>, PrsItem<'a>), E> {
-        attr_list.opt().then(prs_item)
+    #[inline]
+    fn prs_body_row<'a>() -> impl Parser<&'a [u8], PrsBodyRow<'a>, ET<'a>> {
+        attr_list.opt().then(prs_item).map(|(a, b)| PrsBodyRow(a, b))
     }
 
     // lang_prs: "prs" [ supply_spec ] [ "*" ] "{" [ prs_body ] "}"
-    pub fn lang_prs<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], LangPrs<'a>, E> {
+    pub fn lang_prs(i: &[u8]) -> IResult<&[u8], LangPrs, ET> {
         kw("prs")
-            .ignore_then(supply_spec.opt())
-            .then(ctrl('*').p().opt())
-            .then(prs_body_row().many0().braced())
-            .map(|((a, b), c)| (a, b.is_some(), c))
+            .then_opt(supply_spec)
+            .then_opt(ctrl('*'))
+            .then(prs_body_row().many0().braced().map(|(x, y, z)| (x, PrsBody(y), z)))
+            .map(|(((a, b), c), (d, e, f))| LangPrs(a, b, c, d, e, f))
             .parse(i)
     }
 }
@@ -519,6 +772,7 @@ mod lang_spec {
 
     pub mod ast {
         use super::*;
+        use crate::parser::utils::SepList1;
 
         #[derive(Debug, Clone, Copy)]
         pub enum TimingType {
@@ -527,31 +781,39 @@ mod lang_spec {
             Arrow,
         }
 
+        pub type TimingBodyClause<'a> = (ExprId<'a>, Option<CtrlStar<'a>>, Option<(Dir, Ctrl<'a>)>);
+        #[derive(Debug)]
+        pub struct TimingBody<'a>(
+            pub TimingBodyClause<'a>,
+            pub Option<CtrlQMark<'a>>,
+            pub Option<(CtrlColon<'a>, TimingBodyClause<'a>)>,
+            pub (TimingType, Ctrl<'a>),
+            pub Option<(CtrlLBracket<'a>, Expr<'a>, CtrlRBracket<'a>)>,
+            pub TimingBodyClause<'a>,
+        );
+
         #[derive(Debug)]
         pub enum SpecItem<'a> {
-            Normal(Ident<'a>, Vec<ExprId<'a>>),
-            Timing(
-                Option<(ExprId<'a>, Option<Dir>)>,
-                bool,
-                ExprId<'a>,
-                bool,
-                Option<Dir>,
-                TimingType,
-                Option<Expr<'a>>,
-                ExprId<'a>,
-                bool,
-                Option<Dir>,
+            Normal(
+                Ident<'a>,
+                CtrlLParen<'a>,
+                SepList1<ExprId<'a>, CtrlComma<'a>>,
+                CtrlRParen<'a>,
             ),
+            Timing(Kw<'a>, TimingBody<'a>),
         }
 
         #[derive(Debug)]
         pub struct SpecBody<'a> {
-            pub requires_clause: Option<Vec<SpecItem<'a>>>,
-            pub ensures_clause: Option<Vec<SpecItem<'a>>>,
+            pub lbrace: CtrlLBrace<'a>,
+            pub requires_clause: Option<(Kw<'a>, (CtrlLBrace<'a>, Vec<SpecItem<'a>>, CtrlRBrace<'a>))>,
+            pub ensures_clause: Option<(Kw<'a>, (CtrlLBrace<'a>, Vec<SpecItem<'a>>, CtrlRBrace<'a>))>,
             pub generic_clause: Vec<SpecItem<'a>>,
+            pub rbrace: CtrlRBrace<'a>,
         }
 
-        pub type LangSpec<'a> = SpecBody<'a>;
+        #[derive(Debug)]
+        pub struct LangSpec<'a>(pub Kw<'a>, pub SpecBody<'a>);
     }
 
     use ast::*;
@@ -573,48 +835,72 @@ mod lang_spec {
     //             "<<"
     //            | "<"
     //            | "->"
-    fn spec_item<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], SpecItem<'a>, E> {
+    fn timing_clause(i: &[u8]) -> IResult<&[u8], TimingBodyClause, ET> {
+        expr_id
+            .then_opt(ctrl('*'))
+            .then_opt(dir)
+            .map(|((a, b), c)| (a, b, c))
+            .parse(i)
+    }
+    fn timing_item_body(i: &[u8]) -> IResult<&[u8], TimingBody, ET> {
+        // "timing" [ expr_id [ dir ] ":" ] [ "?" ] expr_id [ "*" ] [ dir ]
+        //            timing_type [ "[" expr "]" ] expr_id [ "*" ] [ dir ]
+        // can be expanded to
+        // "timing" expr_id [ "*" ] [ dir ]
+        // AND THEN EITHER
+        // [ ":"  [ "?" ]  expr_id [ "*" ] [ dir ]] OR
+        // [ "?" ]
+        // AND THEN
+        // timing_type [ "[" expr "]" ]
+        // expr_id [ "*" ] [ dir ]
         let timing_type = alt((
-            ctrl2('<', '<').p().value(TimingType::LtLt),
-            ctrl('<').p().value(TimingType::Lt),
-            ctrl2('-', '>').p().value(TimingType::Arrow),
+            ctrl2('<', '<').map(|v| (TimingType::LtLt, v)),
+            ctrl('<').map(|v| (TimingType::Lt, v)),
+            ctrl2('-', '>').map(|v| (TimingType::Arrow, v)),
         ));
+        let opt_second_cluase = alt((
+            ctrl(':')
+                .then_cut(ctrl('?').opt().then(timing_clause))
+                .map(|(a, (b, c))| (b, Some((a, c)))),
+            ctrl('?').opt().map(|b| (b, None)),
+        ));
+        timing_clause
+            .then(opt_second_cluase)
+            .then(timing_type)
+            .then_opt(ctrl('[').then_cut(expr.then(ctrl(']'))).map(|(x, (y, z))| (x, y, z)))
+            .then(timing_clause)
+            .map(|((((a, (b, c)), d), e), f)| TimingBody(a, b, c, d, e, f))
+            .parse(i)
+    }
+    fn spec_item(i: &[u8]) -> IResult<&[u8], SpecItem, ET> {
         let normal_item = ident
             .then(expr_id.list1_sep_by(ctrl(',')).parened())
-            .map(|(a, b)| SpecItem::Normal(a, b));
-        let timing_item_body = tuple((
-            opt(expr_id.then(dir.opt()).then_ignore(ctrl(':'))),
-            ctrl('?').p().opt().map(|v| v.is_some()),
-            expr_id,
-            ctrl('*').p().opt().map(|v| v.is_some()),
-            dir.opt(),
-            timing_type,
-            expr.bracketed().opt(),
-            expr_id,
-            ctrl('*').p().opt().map(|v| v.is_some()),
-            dir.opt(),
-        ));
+            .map(|(a, (b, c, d))| SpecItem::Normal(a, b, c, d));
+
         let timing_item = kw("timing")
-            .ignore_then_cut(timing_item_body)
-            .map(|(a, b, c, d, e, f, g, h, i, j)| SpecItem::Timing(a, b, c, d, e, f, g, h, i, j));
+            .then_cut(timing_item_body)
+            .map(|(a, b)| SpecItem::Timing(a, b));
         normal_item.or(timing_item).parse(i)
     }
 
     // lang_spec: "spec" "{" spec_body "}"
-    pub fn lang_spec<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], LangSpec<'a>, E> {
-        let rc = kw("requires").ignore_then_cut(spec_item.many0().braced());
-        let ec = kw("ensures").ignore_then_cut(spec_item.many0().braced());
+    pub fn lang_spec(i: &[u8]) -> IResult<&[u8], LangSpec, ET> {
+        let rc = kw("requires").then_cut(spec_item.many0().braced());
+        let ec = kw("ensures").then_cut(spec_item.many0().braced());
 
         let braced_spec_body = ctrl('{')
-            .ignore_then(rc.opt().then(ec.opt()).then(spec_item.many0().term_by(ctrl('}'))))
-            .map(|((rc, ec), gc)| SpecBody {
+            .then(rc.opt().then(ec.opt()).then(spec_item.many0().term_by(ctrl('}'))))
+            .map(|(lbrace, ((rc, ec), (gc, rbrace)))| SpecBody {
+                lbrace,
                 requires_clause: rc,
                 ensures_clause: ec,
                 generic_clause: gc,
+                rbrace,
             });
 
         kw("spec")
-            .ignore_then_cut(braced_spec_body)
+            .then_cut(braced_spec_body)
+            .map(|(a, b)| LangSpec(a, b))
             .context("spec block")
             .parse(i)
     }
@@ -625,18 +911,19 @@ mod lang_dataflow {
 
     pub mod ast {
         use super::*;
+        use crate::parser::utils::SepList1;
 
         #[derive(Debug)]
         pub enum ExprIdOrStar<'a> {
             ExprId(ExprId<'a>),
-            Star,
+            Star(CtrlStar<'a>),
         }
 
         #[derive(Debug)]
         pub enum ExprIdOrStarOrBar<'a> {
             ExprId(ExprId<'a>),
-            Star,
-            Bar,
+            Star(CtrlStar<'a>),
+            Bar(CtrlVBar<'a>),
         }
 
         #[derive(Debug, Clone, Copy)]
@@ -649,17 +936,49 @@ mod lang_dataflow {
         pub enum DataflowItem<'a> {
             BracketedOrParenedFlow(
                 Expr<'a>,
-                Option<(BracketedOrParened, Expr<'a>, Option<Expr<'a>>)>,
+                CtrlLArrow<'a>,
+                Option<(
+                    BracketedOrParened,
+                    Ctrl<'a>, /* [ OR ( */
+                    Expr<'a>,
+                    Option<(Ctrl<'a>, Expr<'a>)>,
+                    Ctrl<'a>, /* ] OR ) */
+                )>,
                 ExprId<'a>,
             ),
-            BracedFlow(ExprIdOrStarOrBar<'a>, Vec<ExprIdOrStar<'a>>, Vec<ExprIdOrStar<'a>>),
-            Cluster(Vec<Self>),
-            Sink(ExprId<'a>),
+            BracedFlow(
+                CtrlLBrace<'a>,
+                ExprIdOrStarOrBar<'a>,
+                CtrlRBrace<'a>,
+                SepList1<ExprIdOrStar<'a>, CtrlComma<'a>>,
+                CtrlLArrow<'a>,
+                SepList1<ExprIdOrStar<'a>, CtrlComma<'a>>,
+            ),
+            Cluster(Kw<'a>, CtrlLBrace<'a>, SepList1<Self, CtrlSemi<'a>>, CtrlRBrace<'a>),
+            Sink(ExprId<'a>, CtrlLArrow<'a>, CtrlStar<'a>),
         }
 
-        pub type LangDataflow<'a> = (
-            Option<(Ident<'a>, Vec<(Vec<ExprId<'a>>, Vec<ExprId<'a>>)>)>,
-            Vec<DataflowItem<'a>>,
+        #[derive(Debug)]
+        pub struct DataflowOrdering<'a>(
+            pub Ident<'a>,
+            pub CtrlLBrace<'a>,
+            pub  SepList1<
+                (
+                    SepList1<ExprId<'a>, CtrlComma<'a>>,
+                    Ctrl<'a>, /* < */
+                    SepList1<ExprId<'a>, CtrlComma<'a>>,
+                ),
+                CtrlSemi<'a>,
+            >,
+            pub CtrlRBrace<'a>,
+        );
+        #[derive(Debug)]
+        pub struct LangDataflow<'a>(
+            pub Kw<'a>,
+            pub CtrlLBrace<'a>,
+            pub Option<DataflowOrdering<'a>>,
+            pub SepList1<DataflowItem<'a>, CtrlSemi<'a>>,
+            pub CtrlRBrace<'a>,
         );
     }
 
@@ -679,71 +998,83 @@ mod lang_dataflow {
     // expr_id_or_star_or_bar: {excl}
     //                        expr_id_or_star
     //                       | "|"
-    fn expr_id_or_star<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], ExprIdOrStar<'a>, E> {
+    fn expr_id_or_star(i: &[u8]) -> IResult<&[u8], ExprIdOrStar, ET> {
         alt((
-            map(expr_id, ExprIdOrStar::ExprId),
-            map(ctrl('*'), |_| ExprIdOrStar::Star),
-        ))(i)
+            ctrl('*').map(ExprIdOrStar::Star),
+            expr_id.cut().map(ExprIdOrStar::ExprId),
+        ))
+        .parse(i)
     }
 
-    fn dataflow_item<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], DataflowItem<'a>, E> {
+    fn dataflow_item(i: &[u8]) -> IResult<&[u8], DataflowItem, ET> {
         let expr_id_or_star_or_bar = alt((
-            map(expr_id, ExprIdOrStarOrBar::ExprId),
-            map(ctrl('*'), |_| ExprIdOrStarOrBar::Star),
-            map(ctrl('|'), |_| ExprIdOrStarOrBar::Bar),
+            expr_id.map(ExprIdOrStarOrBar::ExprId),
+            ctrl('*').map(ExprIdOrStarOrBar::Star),
+            ctrl('|').map(ExprIdOrStarOrBar::Bar),
         ));
 
-        let bracketed_inset = expr
-            .then(ctrl(',').ignore_then(expr).opt())
-            .bracketed()
-            .map(|(a, b)| (BracketedOrParened::Bracketed, a, b));
-        let parened_inset = expr
-            .then(ctrl(',').ignore_then(expr).opt())
-            .parened()
-            .map(|(a, b)| (BracketedOrParened::Parened, a, b));
+        let cluster = kw("dataflow_cluster")
+            .then_cut(dataflow_item.list1_sep_by(ctrl(';')).braced())
+            .map(|(a, (b, c, d))| DataflowItem::Cluster(a, b, c, d));
+
+        let bracketed_inset = ctrl('[')
+            .then_cut(expr.then_opt(ctrl(',').then_cut(expr)).then(ctrl(']')))
+            .map(|(a, ((b, c), d))| (BracketedOrParened::Bracketed, a, b, c, d));
+        let parened_inset = ctrl('(')
+            .then_cut(expr.then_opt(ctrl(',').then_cut(expr)).then(ctrl(')')))
+            .map(|(a, ((b, c), d))| (BracketedOrParened::Parened, a, b, c, d));
         let parened_or_boxed_flow = expr
-            .then_ignore(ctrl2('-', '>'))
-            .then(bracketed_inset.or(parened_inset).opt())
+            .then(ctrl2('-', '>'))
+            .then_opt(bracketed_inset.or(parened_inset))
             .then(expr_id)
-            .map(|((a, b), c)| DataflowItem::BracketedOrParenedFlow(a, b, c));
+            .map(|(((a, b), c), d)| DataflowItem::BracketedOrParenedFlow(a, b, c, d));
         let braced_flow = expr_id_or_star_or_bar
             .braced()
             .then(expr_id_or_star.list1_sep_by(ctrl(',')).term_by(ctrl2('-', '>')))
             .then(expr_id_or_star.list1_sep_by(ctrl(',')).p())
-            .map(|((a, b), c)| DataflowItem::BracedFlow(a, b, c));
-        let cluster = map(
-            preceded(kw("dataflow_cluster"), dataflow_item.list1_sep_by(ctrl(';')).braced()),
-            DataflowItem::Cluster,
-        );
-        let sink = map(
-            terminated(expr_id, preceded(ctrl2('-', '>'), ctrl('*'))),
-            DataflowItem::Sink,
-        );
+            .map(|(((a, b, c), (d, e)), f)| DataflowItem::BracedFlow(a, b, c, d, e, f));
 
-        alt((parened_or_boxed_flow, braced_flow, cluster, sink))(i)
+        let sink = expr_id
+            .then(ctrl2('-', '>'))
+            .then(ctrl('*'))
+            .map(|((a, b), c)| DataflowItem::Sink(a, b, c));
+
+        alt((
+            // cluster starts with a kw("dataflow_cluster")
+            cluster,
+            // The other ones start with either an expr or expr_id
+            uncut(parened_or_boxed_flow),
+            uncut(braced_flow),
+            uncut(sink),
+        ))
+        .parse(i)
     }
 
-    fn order_list<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], (Vec<ExprId<'a>>, Vec<ExprId<'a>>), E> {
-        expr_id
+    pub fn lang_dataflow(i: &[u8]) -> IResult<&[u8], LangDataflow, ET> {
+        let order_list = expr_id
             .list1_sep_by(ctrl(','))
             .term_by(ctrl('<'))
             .then(expr_id.list1_sep_by(ctrl(',')).p())
-            .parse(i)
-    }
+            .map(|((a, b), c)| (a, b, c));
 
-    pub fn lang_dataflow<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], LangDataflow<'a>, E> {
-        let dataflow_ordering = pair(ident, order_list.list1_sep_by(ctrl(';')).braced());
+        // since no dataflow item starts `IDENT {`
+        let dataflow_ordering = ident
+            .then(ctrl('{'))
+            .then_cut(order_list.list1_sep_by(ctrl(';')).term_by(ctrl('}')))
+            .map(|((a, b), (c, d))| DataflowOrdering(a, b, c, d));
 
         kw("dataflow")
-            .ignore_then(ctrl('{'))
-            .ignore_then(dataflow_ordering.opt())
-            .then(dataflow_item.list1_sep_by(ctrl(';')).term_by(ctrl('}')))
+            .then_cut(
+                ctrl('{')
+                    .then_opt(dataflow_ordering)
+                    .then(dataflow_item.list1_sep_by(ctrl(';')).term_by(ctrl('}'))),
+            )
+            .map(|(a, ((b, c), (d, e)))| LangDataflow(a, b, c, d, e))
             .parse(i)
     }
 }
 
 mod lang_initialize {
-
     use super::{
         lang_chp_hse::{ast::HseItemList, hse_body},
         *,
@@ -751,18 +1082,35 @@ mod lang_initialize {
 
     pub mod ast {
         use super::*;
+        use crate::parser::utils::SepList1;
 
-        pub type LangInitialize<'a> = Vec<(Ident<'a>, HseItemList<'a>)>;
+        #[derive(Debug)]
+        pub struct ActionItem<'a>(
+            pub Ident<'a>,
+            pub CtrlLBrace<'a>,
+            pub HseItemList<'a>,
+            pub CtrlRBrace<'a>,
+        );
+        #[derive(Debug)]
+        pub struct LangInitialize<'a>(
+            pub Kw<'a>,
+            pub CtrlLBrace<'a>,
+            pub SepList1<ActionItem<'a>, CtrlSemi<'a>>,
+            pub CtrlRBrace<'a>,
+        );
     }
 
     use ast::*;
 
     // lang_initialize: "Initialize" "{" { action_items ";" }* "}"
     // action_items: ID "{" hse_body "}"
-    pub fn lang_initialize<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], LangInitialize<'a>, E> {
-        let action_item = ident.then(hse_body.braced());
+    pub fn lang_initialize(i: &[u8]) -> IResult<&[u8], LangInitialize, ET> {
+        let action_item = ident
+            .then(hse_body.braced())
+            .map(|(a, (b, c, d))| ActionItem(a, b, c, d));
         kw("initialize")
-            .ignore_then_cut(action_item.list1_sep_by(ctrl(';')).braced())
+            .then_cut(action_item.list1_sep_by(ctrl(';')).braced())
+            .map(|(a, (b, c, d))| LangInitialize(a, b, c, d))
             .context("initialize block")
             .parse(i)
     }
@@ -772,14 +1120,44 @@ mod lang_sizing {
     use super::*;
     pub mod ast {
         use super::*;
-        pub type DirectivePart<'a> = (Dir, Expr<'a>, Option<Ident<'a>>, Option<Expr<'a>>);
+        use crate::parser::utils::SepList1;
+        #[derive(Debug)]
+        pub struct DirectivePart<'a>(
+            pub (Dir, Ctrl<'a>),
+            pub Expr<'a>,
+            pub Option<(CtrlComma<'a>, (Ident<'a>, Option<(CtrlComma<'a>, Expr<'a>)>))>,
+        );
 
         #[derive(Debug)]
+        pub struct SizeDirectiveMacroLoop<'a>(
+            pub CtrlLParen<'a>,
+            pub CtrlSemi<'a>,
+            pub Ident<'a>,
+            pub CtrlColon<'a>,
+            pub ExprRange<'a>,
+            pub CtrlColon<'a>,
+            pub SepList1<SizeDirective<'a>, CtrlSemi<'a>>,
+            pub CtrlRParen<'a>,
+        );
+        #[derive(Debug)]
         pub enum SizeDirective<'a> {
-            Directive(ExprId<'a>, (DirectivePart<'a>, Option<DirectivePart<'a>>)),
-            MacroLoop(MacroLoop<'a, Ctrl<'a>, (), Vec<SizeDirective<'a>>>),
+            Item(
+                ExprId<'a>,
+                CtrlLBrace<'a>,
+                DirectivePart<'a>,
+                Option<(CtrlSemi<'a>, DirectivePart<'a>)>,
+                CtrlRBrace<'a>,
+            ),
+            MacroLoop(SizeDirectiveMacroLoop<'a>),
         }
-        pub type LangSizing<'a> = (Vec<Option<(Ident<'a>, Expr<'a>)>>, Vec<SizeDirective<'a>>);
+        #[derive(Debug)]
+        pub struct LangSizing<'a>(
+            pub Kw<'a>,
+            pub CtrlLBrace<'a>,
+            pub SepList1<Option<(Ident<'a>, Expr<'a>)>, CtrlSemi<'a>>,
+            pub SepList1<SizeDirective<'a>, CtrlSemi<'a>>,
+            pub CtrlRBrace<'a>,
+        );
     }
     use ast::*;
 
@@ -791,45 +1169,38 @@ mod lang_sizing {
     // size_body: { size_setup ";" }* { size_directive ";" }*
     // lang_size: "sizing" "{" [ size_body ] "}"
 
-    fn directive_part<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], DirectivePart<'a>, E> {
+    fn directive_part(i: &[u8]) -> IResult<&[u8], DirectivePart, ET> {
         dir.then(expr)
-            .then(ctrl(',').ignore_then(ident).opt())
-            .then(ctrl(',').ignore_then(expr).opt())
-            .map(|(((a, b), c), d)| (a, b, c, d))
+            .then_opt(ctrl(',').then_cut(ident.then_opt(ctrl(',').then_cut(expr))))
+            .map(|((a, b), c)| DirectivePart(a, b, c))
             .parse(i)
     }
 
-    fn size_directive<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], SizeDirective<'a>, E> {
+    fn size_directive(i: &[u8]) -> IResult<&[u8], SizeDirective, ET> {
         let directive = expr_id
-            .then(
-                directive_part
-                    .then(ctrl(';').ignore_then(directive_part).opt())
-                    .braced(),
-            )
-            .map(|(a, b)| SizeDirective::Directive(a, b));
+            .then(directive_part.then_opt(ctrl(';').then_cut(directive_part)).braced())
+            .map(|(a, (b, (c, d), e))| SizeDirective::Item(a, b, c, d, e));
         let macro_loop = ctrl('(')
-            .precedes(tuple((
+            .then_cut(tuple((
                 ctrl(';'),
                 ident,
-                preceded(ctrl(':'), expr_range),
-                preceded(ctrl(':'), none),
-                size_directive.list1_sep_by(ctrl(';')).terminated(ctrl(')')),
+                ctrl(':').then(expr_range).then(ctrl(':')),
+                size_directive.list1_sep_by(ctrl(';')).term_by(ctrl(')')),
             )))
-            .context("macro loop")
-            .map(SizeDirective::MacroLoop);
-        directive.or(macro_loop).parse(i)
+            .map(|(a, (b, c, ((d, e), f), (g, h)))| SizeDirectiveMacroLoop(a, b, c, d, e, f, g, h))
+            .map(SizeDirective::MacroLoop)
+            .context("macro loop");
+        macro_loop.or(directive).parse(i)
     }
 
-    pub fn lang_sizing<'a, E: EE<'a>>(i: &'a [u8]) -> IResult<&'a [u8], LangSizing<'a>, E> {
-        let size_setups = ident
-            .and(ctrl2('<', '-').precedes(expr))
-            .opt()
-            .list1_sep_by(ctrl(';'))
-            .p();
+    pub fn lang_sizing(i: &[u8]) -> IResult<&[u8], LangSizing, ET> {
+        let one_size_setup = ident.then_cut(ctrl2('<', '-').precedes(expr));
+        let size_setups = one_size_setup.opt().list1_sep_by(ctrl(';')).p();
         let size_directives = size_directive.list1_sep_by(ctrl(';'));
 
         kw("sizing")
-            .ignore_then_cut(ctrl('{').ignore_then(size_setups.then(size_directives.term_by(ctrl('}')))))
+            .then_cut(ctrl('{').then(size_setups).then(size_directives.term_by(ctrl('}'))))
+            .map(|(a, ((b, c), (d, e)))| LangSizing(a, b, c, d, e))
             .parse(i)
     }
 }
