@@ -16,8 +16,6 @@ defproc testme (chan?(int<512>) Chunk; chan?(int<256>) Digest_in; chan!(int<256>
 skip;skip;skip;
 
     *[
-
-
         Digest_in?digest_in, Chunk?chunk_;
 
               a := a ? b :c ? ---d ^v :e;

@@ -118,6 +118,7 @@ pub enum TokenKind {
     UnspacedCtrlAtSign,
     // IllegalChar should be last!
     IllegalChar,
+    UntermStr,
 }
 const CTRL_CHARS: &str = "()[]{};,?!.+-*/=|&~^%<>:#'@";
 
@@ -299,6 +300,7 @@ fn padded_token<'a, E: ParseError<&'a str> + ContextError<&'a str>>(i: &'a str) 
     enum SimpleKind {
         Num,
         Str,
+        UntermStr,
         Identlike,
         Ctrl,
         IllegalChar,
@@ -313,8 +315,12 @@ fn padded_token<'a, E: ParseError<&'a str> + ContextError<&'a str>>(i: &'a str) 
 
     // TODO handle escaped character, and handle error cases
     let string = map(
-        recognize(delimited(char('"'), is_not("\""), char('"'))),
+        recognize(delimited(char('"'), is_not("\"\n"), char('"'))),
         |v: &'a str| (SimpleKind::Str, v),
+    );
+    let unterm_string = map(
+        recognize(delimited(char('"'), is_not("\"\n"), char('\n'))),
+        |v: &'a str| (SimpleKind::UntermStr, v),
     );
 
     //   // A parser for identifiers and keywords
@@ -331,7 +337,7 @@ fn padded_token<'a, E: ParseError<&'a str> + ContextError<&'a str>>(i: &'a str) 
     map(
         pair(
             whitespace_or_comment,
-            alt((int16, int10, string, ctrl, ident, err_char)),
+            alt((int16, int10, string, unterm_string, ctrl, ident, err_char)),
         ),
         |(leading_space, (kind, str_))| {
             let kind = match kind {
@@ -347,6 +353,7 @@ fn padded_token<'a, E: ParseError<&'a str> + ContextError<&'a str>>(i: &'a str) 
                     },
                 ),
                 SimpleKind::IllegalChar => TokenKind::IllegalChar,
+                SimpleKind::UntermStr => TokenKind::UntermStr,
             };
             Token {
                 leading_space,
@@ -365,6 +372,6 @@ pub fn lexer<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
 
 pub type FlatToken = u8;
 
-pub fn flatten_token_list<'a>(toks: &Vec<Token<'a>>) -> Vec<FlatToken> {
+pub fn flatten_token_list(toks: &Vec<Token>) -> Vec<FlatToken> {
     toks.iter().map(|tok| tok.kind as u8).collect()
 }

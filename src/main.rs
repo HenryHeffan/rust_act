@@ -41,13 +41,20 @@ fn lex_and_print_errors(data: &str) -> (Vec<Token>, Vec<(WhitespaceKind, &str)>)
                     .with_message(format!("Unexpected character {}", c))
                     .with_color(Color::Yellow),
             )
-            // .with_label(
-            //     Label::new(span)
-            //         .with_message(
-            //             format!("Unexpected character").fg(Color::Red),
-            //         )
-            //         .with_color(Color::Red),
-            // )
+            .finish()
+            .print(Source::from(&data))
+            .unwrap();
+    };
+    let print_unterm_str_error = |s: &str| {
+        let start = s.as_ptr() as usize - data.as_ptr() as usize;
+        let span = start..start + s.len();
+        Report::build(ReportKind::Error, (), start)
+            .with_message(format!("Unterminated string {}", s))
+            .with_label(
+                Label::new(span.clone())
+                    .with_message(format!("Unterminated string {}", s))
+                    .with_color(Color::Yellow),
+            )
             .finish()
             .print(Source::from(&data))
             .unwrap();
@@ -68,6 +75,10 @@ fn lex_and_print_errors(data: &str) -> (Vec<Token>, Vec<(WhitespaceKind, &str)>)
                 match tok.kind {
                     TokenKind::IllegalChar => {
                         print_illegal_char_error(tok.str_);
+                        any_err = true;
+                    }
+                    TokenKind::UntermStr => {
+                        print_unterm_str_error(tok.str_);
                         any_err = true;
                     }
                     _ => (),
@@ -101,27 +112,39 @@ fn lex_and_print_errors(data: &str) -> (Vec<Token>, Vec<(WhitespaceKind, &str)>)
 
     (tokens, final_whitespace)
 }
+//
+// fn print_error_tree<'a>(tl: usize, i: i32, e: &'a ErrorTree<&'a [u8]>) -> (usize, &'a ErrorTree<&'a [u8]>) {
+//     let indent = (0..2 * i).map(|_| " ").collect::<String>();
+//     match e {
+//         ErrorTree::Alt(choices) => choices
+//             .iter()
+//             .map(|choice| print_error_tree(tl, i + 1, choice))
+//             .min_by_key(|v| v.0.clone())
+//             .unwrap(),
+//         ErrorTree::Base { location, kind } => {
+//             println!("{} {:?} {:?}", indent, tl - location.len(), kind);
+//             (location.len(), &e)
+//         }
+//         ErrorTree::Stack { base, contexts } => {
+//             println!(
+//                 "{} {:?}",
+//                 indent,
+//                 contexts.iter().map(|(l, c)| (tl - l.len(), c)).collect::<Vec<_>>()
+//             );
+//             print_error_tree(tl, i + 1, &base)
+//         }
+//     }
+// }
 
-fn print_error_tree<'a>(tl: usize, i: i32, e: &'a ErrorTree<&'a [u8]>) -> (usize, &'a ErrorTree<&'a [u8]>) {
-    let indent = (0..2 * i).map(|_| " ").collect::<String>();
+fn get_longest_error_idx<'a>(tl: usize, i: i32, e: &'a ErrorTree<&'a [u8]>) -> usize {
     match e {
         ErrorTree::Alt(choices) => choices
             .iter()
-            .map(|choice| print_error_tree(tl, i + 1, choice))
-            .min_by_key(|v| v.0.clone())
+            .map(|choice| get_longest_error_idx(tl, i + 1, choice))
+            .min_by_key(|v| v.clone())
             .unwrap(),
-        ErrorTree::Base { location, kind } => {
-            println!("{} {:?} {:?}", indent, tl - location.len(), kind);
-            (location.len(), &e)
-        }
-        ErrorTree::Stack { base, contexts } => {
-            println!(
-                "{} {:?}",
-                indent,
-                contexts.iter().map(|(l, c)| (l.len(), c)).collect::<Vec<_>>()
-            );
-            print_error_tree(tl, i + 1, &base)
-        }
+        ErrorTree::Base { location, kind: _ } => location.len(),
+        ErrorTree::Stack { base, contexts: _ } => get_longest_error_idx(tl, i + 1, &base),
     }
 }
 
@@ -131,18 +154,12 @@ fn main() {
     let (tokens, _) = lex_and_print_errors(&src);
     let flat_tokens = flatten_token_list(&tokens);
 
-    // println!("{:#?}", tokens.iter().map(|t|t.kind).collect::<Vec<_>>());
-    // println!("{:?}", flat_tokens);
     let parsed = all_consuming(top_level)(&flat_tokens);
     match parsed {
         Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
             // I think we should be able to tokenize any file, so this should never be used. However. Leave this code in just to be safe
-            let (i, ee) = print_error_tree(flat_tokens.len(), 0, &e);
-            println!("{:?}", ee);
-            // println!("{:?}", i);
-            // println!("{:?}", flat_tokens[flat_tokens.len() - i]);
+            let i = get_longest_error_idx(flat_tokens.len(), 0, &e);
             let bad_token = &tokens[flat_tokens.len() - i];
-            // println!("{:?}", tokens[flat_tokens.len() - i]);
             let c = &bad_token.str_;
             let start = c.as_ptr() as usize - src.as_ptr() as usize;
             let span = start..start + c.len();
