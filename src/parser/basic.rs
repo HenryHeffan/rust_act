@@ -2,7 +2,7 @@ pub use crate::parser::utils::{uncut, CtrlC, CtrlN, KwC, Many0, Many1, MyParserE
 use nom::{
     branch::alt,
     bytes::complete::tag,
-    combinator::{map, not, peek},
+    combinator::{not, peek},
     IResult, Parser,
 };
 use nom_supreme::parser_ext::ParserExt;
@@ -102,14 +102,13 @@ pub mod ast {
     #[derive(Debug, Clone)]
     pub enum FuncName<'a> {
         Ident(Ident<'a>),
-        Int,
-        Bool,
+        Int(Kw<'a>),
+        Bool(Kw<'a>),
     }
 
     // An expression node in the AST. Children are spanned so we can generate useful runtime errors.
     #[derive(Debug, Clone)]
     pub enum Expr<'a> {
-        Error,
         Num(Num<'a>),
         Ident(Ident<'a>),
         // meaning a variable or a channel that is an input to the expressions
@@ -157,7 +156,10 @@ pub mod ast {
     #[derive(Debug)]
     pub enum PrsExpr<'a> {
         Ident(Ident<'a>),
-        Paren(Box<Self>),
+        Parened(CtrlLParen<'a>, Box<Self>, CtrlRParen<'a>),
+        And(Ctrl<'a>, Box<Self>, Box<Self>),
+        Or(Ctrl<'a>, Box<Self>, Box<Self>),
+        Not(Ctrl<'a>, Box<Self>),
     }
 
     #[derive(Debug)]
@@ -452,8 +454,8 @@ where
             .map(|((a, b), ((c, d), e))| Expr::BitField(a, b, Box::new(c), d, e));
 
         let func_name = alt((
-            kw("int").map(|_| FuncName::Int),
-            kw("bool").map(|_| FuncName::Bool),
+            kw("int").map(FuncName::Int),
+            kw("bool").map(FuncName::Bool),
             ident.map(FuncName::Ident),
         ));
         let func_call = func_name
@@ -495,7 +497,8 @@ where
                     .then(ctrl(']')),
             )
             .map(|(a, ((b, c), d))| AccessKind::Arr(a, b, c, d));
-        let dot_access = ctrl('.').then_cut(ident).map(|(a, b)| AccessKind::Dot(a, b));
+        let dot_access =
+            peek(not(ctrl2('.', '.'))).ignore_then(ctrl('.').then_cut(ident).map(|(a, b)| AccessKind::Dot(a, b)));
 
         let access = atom
             .then(
@@ -719,8 +722,60 @@ pub fn expr_or_str(i: &[u8]) -> IResult<&[u8], ExprOrStr, ET> {
     expr.map(ExprOrStr::Expr).or(string.map(ExprOrStr::Str)).parse(i)
 }
 
+fn prs_unary_rec(i: &[u8]) -> IResult<&[u8], PrsExpr, ET> {
+    // 'Atoms' are expressions that contain no ambiguity
+    let atom = alt((
+        ident.map(PrsExpr::Ident), // TODO support qualified names?
+        ctrl('(')
+            .then_cut(prs_expr.then(ctrl(')')))
+            .map(|(a, (b, c))| PrsExpr::Parened(a, Box::new(b), c)),
+    ));
+
+    // https://en.cppreference.com/w/c/language/operator_precedence
+
+    // Unary operators have precidence 2
+
+    // This is an ok use of the nom version of "many0", because all of the things being parsed are 1 token long
+    nom::multi::many0(ctrl('~'))
+        .then(atom)
+        .map(|(ops, a)| ops.iter().rev().fold(a, |e, c| PrsExpr::Not(*c, Box::new(e))))
+        .parse(i)
+}
+
 pub fn prs_expr(i: &[u8]) -> IResult<&[u8], PrsExpr, ET> {
-    map(ident, |i| PrsExpr::Ident(i))(i)
+    // In order to make it compile in a reasonable amount of time, we do binary operator parsing in two steps.
+    // First we parse a chain of binary operators, and then we parse the precidence within the chains
+
+    let op = alt((ctrl('&').map(|v| (true, v)), ctrl('|').map(|v| (true, v))));
+    prs_unary_rec
+        .then(
+            op.then(prs_unary_rec)
+                .many0()
+                .term_by_peek_not_alt2(ctrl('&'), ctrl('|')),
+        )
+        .map(|(n0, ns): (PrsExpr, Vec<((bool, Ctrl), PrsExpr)>)| {
+            // this bit of code is gross as it uses a mutable algorithm. It scans over the list [node0, nodes[0], nodes[1], ...]
+            // and combines any pair of nodes with one of the specified operations in between
+            // AND binds tigheter than OR
+            let (acc_with_or_ctrl, anded_acc) = ns.into_iter().fold(
+                (None, n0),
+                |(acc_with_or_ctrl, anded_acc), ((is_and, c), r)| match is_and {
+                    true => (acc_with_or_ctrl, PrsExpr::And(c, Box::new(anded_acc), Box::new(r))),
+                    false => match acc_with_or_ctrl {
+                        Some((acc, or_ctrl)) => {
+                            (Some((PrsExpr::Or(or_ctrl, Box::new(acc), Box::new(anded_acc)), c)), r)
+                        }
+                        None => (Some((anded_acc, c)), r),
+                    },
+                },
+            );
+            let acc = match acc_with_or_ctrl {
+                Some((acc, or_ctrl)) => PrsExpr::Or(or_ctrl, Box::new(acc), Box::new(anded_acc)),
+                None => anded_acc,
+            };
+            acc
+        })
+        .parse(i)
 }
 
 pub fn arrayed_expr_ids(i: &[u8]) -> IResult<&[u8], ArrayedExprIds, ET> {

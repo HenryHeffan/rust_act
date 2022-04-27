@@ -257,7 +257,7 @@ impl TokenKind {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum WhitespaceKind {
     Space,
     LineComment,

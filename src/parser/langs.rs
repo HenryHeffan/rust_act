@@ -32,7 +32,8 @@ mod lang_chp_hse {
 
         #[derive(Debug)]
         pub struct ChpItem<'a>(pub Option<(Ident<'a>, CtrlColon<'a>)>, pub ChpStmt<'a>);
-        pub type ChpItemList<'a> = SepList1<SepList1<ChpItem<'a>, CtrlComma<'a>>, CtrlSemi<'a>>;
+        #[derive(Debug)]
+        pub struct ChpItemList<'a>(pub SepList1<SepList1<ChpItem<'a>, CtrlComma<'a>>, CtrlSemi<'a>>);
 
         #[derive(Debug)]
         pub struct AssignStmt<'a>(pub ExprId<'a>, pub Ctrl<'a> /* := */, pub Expr<'a>);
@@ -57,7 +58,7 @@ mod lang_chp_hse {
             AssignBoolDir(AssignBoolDirStmt<'a>),
             SendStmt(SendStmt<'a>),
             RecvStmt(RecvStmt<'a>),
-            Skip,
+            Skip(Kw<'a>),
             ParenedBody(CtrlLParen<'a>, ChpItemList<'a>, CtrlRParen<'a>),
             FuncCall(
                 Ident<'a>,
@@ -229,7 +230,7 @@ mod lang_chp_hse {
     pub fn chp_stmt(i: &[u8]) -> IResult<&[u8], ChpStmt, ET> {
         // These all begin with a unique token
         // skip -> `skip`   `[` or `*[`
-        let skip_stmt = kw("skip").context("skip_stmt").map(|_| ChpStmt::Skip);
+        let skip_stmt = kw("skip").context("skip_stmt").map(ChpStmt::Skip);
         let chp_select_or_loop_stmt = chp_select_or_loop_stmt
             .context("chp_select_or_loop_stmt")
             .map(ChpStmt::BracketedStmt);
@@ -250,12 +251,12 @@ mod lang_chp_hse {
                     .then(chp_item_list1().term_by(ctrl(')'))),
             )
             .context("macro_loop")
-            .map(|((a, b), ((((c, d), e), f), (g, h)))| ChpMacroLoop(a, b, c, d, e, f, g, h))
+            .map(|((a, b), ((((c, d), e), f), (g, h)))| ChpMacroLoop(a, b, c, d, e, f, ChpItemList(g), h))
             .map(ChpStmt::MacroLoop);
 
         let parened_body = ctrl('(')
             .then_cut(chp_item_list1().term_by(ctrl(')')).verify(|v| v.0.items.len() >= 2))
-            .map(|(a, (b, c))| ChpStmt::ParenedBody(a, b, c))
+            .map(|(a, (b, c))| ChpStmt::ParenedBody(a, ChpItemList(b), c))
             .context("parened body");
 
         // This goes `ident (` at the start
@@ -386,14 +387,14 @@ mod lang_chp_hse {
                 chp_item_list1().term_by(ctrl(')')),
             )))
             .context("macro loop")
-            .map(|((a, b), (c, d, e, f, g, h, (i, j)))| GuardedCmd::Macro(a, b, c, d, e, f, g, h, i, j));
+            .map(|((a, b), (c, d, e, f, g, h, (i, j)))| GuardedCmd::Macro(a, b, c, d, e, f, g, h, ChpItemList(i), j));
         let else_branch = kw("else")
             .then_cut(ctrl2('-', '>').then(chp_item_list1().p()))
-            .map(|(a, (b, c))| GuardedCmd::Else(a, b, c));
+            .map(|(a, (b, c))| GuardedCmd::Else(a, b, ChpItemList(c)));
         let normal_branch = expr
             .then(ctrl2('-', '>'))
             .then(chp_item_list1().p())
-            .map(|((a, b), c)| GuardedCmd::Expr(a, b, c));
+            .map(|((a, b), c)| GuardedCmd::Expr(a, b, ChpItemList(c)));
 
         alt((macro_branch, else_branch, normal_branch)).parse(i)
     }
@@ -441,7 +442,7 @@ mod lang_chp_hse {
                     .then_opt(ctrl2('<', '-').then_cut(expr))
                     .then(ctrl(']')),
             )
-            .map(|(a, ((b, c), d))| ChpBracketedStmt::DoLoop(a, b, c, d))
+            .map(|(a, ((b, c), d))| ChpBracketedStmt::DoLoop(a, ChpItemList(b), c, d))
             .context("do loop");
 
         // at most one of these should succeed. If more do, raise an error! Otherwise, return the successful one
@@ -456,7 +457,7 @@ mod lang_chp_hse {
     // hse_comma_item: { hse_body_item "," }*
     // Instead, HSE should be parsed like chp, and then checked afterwords that it is in the correct subset of chp
     pub fn hse_body(i: &[u8]) -> IResult<&[u8], HseItemList, ET> {
-        chp_item_list1().p().map(HseItemList).parse(i)
+        chp_item_list1().p().map(ChpItemList).map(HseItemList).parse(i)
     }
 
     fn hse_bodies(i: &[u8]) -> IResult<&[u8], HseBodies, ET> {
@@ -486,7 +487,7 @@ mod lang_chp_hse {
         let block = supply_spec.opt().then(chp_item_list1().opt().braced());
         kw("chp")
             .then_cut(block)
-            .map(|(a, (b, (c, d, e)))| LangChp(a, b, c, d, e))
+            .map(|(a, (b, (c, d, e)))| LangChp(a, b, c, d.map(ChpItemList), e))
             .context("chp block")
             .parse(i)
     }
@@ -533,6 +534,11 @@ mod lang_prs {
         );
 
         #[derive(Debug)]
+        pub enum PassNPKind {
+            N,
+            P,
+        }
+        #[derive(Debug)]
         pub enum PrsItem<'a> {
             Rule(PrsExpr<'a>, (ArrowKind, Ctrl<'a>), ExprId<'a>, (Dir, Ctrl<'a>)),
             AtRule(
@@ -550,19 +556,8 @@ mod lang_prs {
                 CtrlRBrace<'a>,
             ),
             MacroRule(PrsMacroLoop<'a>),
-            PassN(
-                Kw<'a>,
-                SizeSpec<'a>,
-                CtrlLParen<'a>,
-                ExprId<'a>,
-                CtrlComma<'a>,
-                ExprId<'a>,
-                CtrlComma<'a>,
-                ExprId<'a>,
-                CtrlRParen<'a>,
-            ),
-            PassP(
-                Kw<'a>,
+            Pass(
+                (PassNPKind, Kw<'a>),
                 SizeSpec<'a>,
                 CtrlLParen<'a>,
                 ExprId<'a>,
@@ -686,12 +681,12 @@ mod lang_prs {
     }
 
     fn prs_item(i: &[u8]) -> IResult<&[u8], PrsItem, ET> {
-        let pass_n = kw("passn")
-            .then_cut(size_spec.then(expr_id_comma_3_tuple))
-            .map(|(a, (b, (c, d, e, f, g, h, i)))| PrsItem::PassN(a, b, c, d, e, f, g, h, i));
-        let pass_p = kw("passp")
-            .then_cut(size_spec.then(expr_id_comma_3_tuple))
-            .map(|(a, (b, (c, d, e, f, g, h, i)))| PrsItem::PassP(a, b, c, d, e, f, g, h, i));
+        let pass = alt((
+            kw("passn").map(|v| (PassNPKind::N, v)),
+            kw("passn").map(|v| (PassNPKind::P, v)),
+        ))
+        .then_cut(size_spec.then(expr_id_comma_3_tuple))
+        .map(|(a, (b, (c, d, e, f, g, h, i)))| PrsItem::Pass(a, b, c, d, e, f, g, h, i));
         let transgate = kw("transgate")
             .then_cut(size_spec.then(expr_id_comma_4_tuple))
             .map(|(a, (b, (c, d, e, f, g, h, i, j, k)))| PrsItem::TransGate(a, b, c, d, e, f, g, h, i, j, k));
@@ -736,8 +731,7 @@ mod lang_prs {
 
         alt((
             // These three start with a unique keyword at the begining, so it is easy to apply the "cut" operator afterwords
-            pass_n,
-            pass_p,
+            pass,
             transgate,
             // The other four are harder to tell apart. Both the macro-loop and the rule/at_rule can being with a paren.
             // Both rule/at_rule and sub-block being with a identifier.
@@ -781,7 +775,8 @@ mod lang_spec {
             Arrow,
         }
 
-        pub type TimingBodyClause<'a> = (ExprId<'a>, Option<CtrlStar<'a>>, Option<(Dir, Ctrl<'a>)>);
+        #[derive(Debug)]
+        pub struct TimingBodyClause<'a>(pub ExprId<'a>, pub Option<CtrlStar<'a>>, pub Option<(Dir, Ctrl<'a>)>);
         #[derive(Debug)]
         pub struct TimingBody<'a>(
             pub TimingBodyClause<'a>,
@@ -839,7 +834,7 @@ mod lang_spec {
         expr_id
             .then_opt(ctrl('*'))
             .then_opt(dir)
-            .map(|((a, b), c)| (a, b, c))
+            .map(|((a, b), c)| TimingBodyClause(a, b, c))
             .parse(i)
     }
     fn timing_item_body(i: &[u8]) -> IResult<&[u8], TimingBody, ET> {

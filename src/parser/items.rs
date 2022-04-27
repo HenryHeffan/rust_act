@@ -36,10 +36,10 @@ pub mod ast {
 
     #[derive(Debug)]
     pub enum NonChanTypeName<'a> {
-        Int,
-        Ints,
-        Bool,
-        Enum,
+        Int(Kw<'a>),
+        Ints(Kw<'a>),
+        Bool(Kw<'a>),
+        Enum(Kw<'a>),
         QualifiedName(QualifiedName<'a>),
     }
 
@@ -230,9 +230,9 @@ pub mod ast {
     #[derive(Debug)]
     pub struct LangRefine<'a>(
         pub Kw<'a>,
-        pub CtrlLBracket<'a>,
+        pub CtrlLBrace<'a>,
         pub Vec<BaseItem<'a>>,
-        pub CtrlRBracket<'a>,
+        pub CtrlRBrace<'a>,
     );
 
     // Types for "top level" items
@@ -381,7 +381,7 @@ pub mod ast {
 
     #[derive(Debug)]
     pub enum ProclikeBody<'a> {
-        NoBody,
+        NoBody(CtrlSemi<'a>),
         WithBody(
             Option<OverrideSpec<'a>>,
             CtrlLBrace<'a>,
@@ -397,7 +397,7 @@ pub mod ast {
     // TODO add check in next pass to enforce right sort of things
     #[derive(Debug)]
     pub enum EnumBody<'a> {
-        NoBody,
+        NoBody(CtrlSemi<'a>),
         WithBody(
             CtrlLBrace<'a>,
             SepList1<Ident<'a>, CtrlComma<'a>>,
@@ -466,10 +466,10 @@ pub fn physical_inst_type(i: &[u8]) -> IResult<&[u8], PhysicalInstType, ET> {
     ));
     let template_args = arg.list1_sep_by(ctrl(',')).ang_braced().opt();
     let non_chan_type_name = alt((
-        kw("int").map(|_| NonChanTypeName::Int),
-        kw("ints").map(|_| NonChanTypeName::Ints),
-        kw("bool").map(|_| NonChanTypeName::Bool),
-        kw("enum").map(|_| NonChanTypeName::Enum),
+        kw("int").map(NonChanTypeName::Int),
+        kw("ints").map(NonChanTypeName::Ints),
+        kw("bool").map(NonChanTypeName::Bool),
+        kw("enum").map(NonChanTypeName::Enum),
         qualified_name.map(NonChanTypeName::QualifiedName),
     ));
     let non_chan_type = non_chan_type_name
@@ -962,7 +962,7 @@ fn proclike_body(i: &[u8]) -> IResult<&[u8], ProclikeBody, ET> {
         )
         .map(|(a, (b, (c, d), e))| ProclikeBody::WithBody(a, b, c, d, e));
 
-    let no_body = ctrl(';').map(|_| ProclikeBody::NoBody);
+    let no_body = ctrl(';').map(ProclikeBody::NoBody);
 
     no_body.or(with_body).parse(i)
 }
@@ -1025,13 +1025,13 @@ fn def_templated(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
 
     // Option 1: `export [template_spec] templatedable_def`
     let def_templated1 = kw("export")
-        .then_cut(
-            opt(kw("template")
-                .then(param_instance.list1_sep_by(ctrl(';')).ang_braced())
-                .map(|(a, (b, c, d))| (a, b, c, d)))
-            .then(templateable_def),
+        .then_opt(
+            kw("template")
+                .then_cut(param_instance.list1_sep_by(ctrl(';')).ang_braced())
+                .map(|(a, (b, c, d))| (a, b, c, d)),
         )
-        .map(|(a, (b, c))| TopItem::DefTemplated(OptTemplateSpec(Some(a), b), c))
+        .then(templateable_def)
+        .map(|((a, b), c)| TopItem::DefTemplated(OptTemplateSpec(Some(a), b), c))
         .context("define");
 
     // Option 2: `template_spec templatedable_def`
@@ -1066,7 +1066,7 @@ fn new_namespace(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
 }
 
 fn def_enum(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
-    let no_body = ctrl(';').map(|_| EnumBody::NoBody);
+    let no_body = ctrl(';').map(EnumBody::NoBody);
     let with_body = ident
         .list1_sep_by(ctrl(','))
         .braced()

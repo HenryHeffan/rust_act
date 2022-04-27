@@ -150,12 +150,12 @@ fn get_longest_error_idx<'a>(tl: usize, i: i32, e: &'a ErrorTree<&'a [u8]>) -> u
 
 fn main() {
     let src = fs::read_to_string(env::args().nth(1).expect("Expected file argument")).expect("Failed to read file");
-
+    let width = env::args().nth(2).map(|v| v.parse::<usize>().unwrap()).unwrap_or(80);
     let (tokens, _) = lex_and_print_errors(&src);
     let flat_tokens = flatten_token_list(&tokens);
 
     let parsed = all_consuming(top_level)(&flat_tokens);
-    match parsed {
+    let ast = match parsed {
         Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
             // I think we should be able to tokenize any file, so this should never be used. However. Leave this code in just to be safe
             let i = get_longest_error_idx(flat_tokens.len(), 0, &e);
@@ -173,13 +173,14 @@ fn main() {
                 .finish()
                 .print(Source::from(&src))
                 .unwrap();
+            std::process::exit(1)
         }
-        Ok(_) => {
-            println!("Successful parse!")
-        }
-
+        Ok((_, ast)) => ast,
         _ => panic!("{:?}", parsed),
-    }
+    };
+    let pretty_str =
+        print_pretty(&ast, &flat_tokens, &tokens, width).unwrap_or("Failed to pretty-print ast".to_string());
+    println!("Pretty print:\n{}", pretty_str);
 }
 
 #[cfg(test)]
