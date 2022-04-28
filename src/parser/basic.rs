@@ -705,39 +705,6 @@ pub fn expr_no_gt(i: &[u8]) -> IResult<&[u8], Expr, ET> {
     query_rec(expr, infix_binary_ops_no_gt).context("expr no gt").parse(i)
 }
 
-// arrayed_exprs: { array_term "#" }*
-// array_term: {excl}
-//            "{" { arrayed_exprs "," }* "}"
-//           | expr
-pub fn arrayed_exprs_no_gt(i: &[u8]) -> IResult<&[u8], Arrayed<Expr>, ET> {
-    let term = alt((
-        ctrl('{')
-            .then_cut(arrayed_exprs.list1_sep_by(ctrl(',')).term_by(ctrl('}')))
-            .map(|(a, (b, c))| Arrayed::Braces(a, b, c)),
-        expr_no_gt.map(Arrayed::Base),
-    ));
-
-    term.list1_sep_by(ctrl('#'))
-        .p()
-        .map(Arrayed::Hashes)
-        .context("arrayed exprs no gt")
-        .parse(i)
-}
-pub fn arrayed_exprs(i: &[u8]) -> IResult<&[u8], Arrayed<Expr>, ET> {
-    let term = alt((
-        ctrl('{')
-            .then_cut(arrayed_exprs.list1_sep_by(ctrl(',')).term_by(ctrl('}')))
-            .map(|(a, (b, c))| Arrayed::Braces(a, b, c)),
-        expr.map(Arrayed::Base),
-    ));
-
-    term.list1_sep_by(ctrl('#'))
-        .p()
-        .map(Arrayed::Hashes)
-        .context("arrayed exprs")
-        .parse(i)
-}
-
 pub fn expr_range(i: &[u8]) -> IResult<&[u8], ExprRange, ET> {
     let dotted_part = peek(ctrl('.')).ignore_then_cut(ctrl2('.', '.').then(expr));
     expr.then(dotted_part.opt()).context("expr range").parse(i)
@@ -827,23 +794,44 @@ pub fn prs_expr(i: &[u8]) -> IResult<&[u8], PrsExpr, ET> {
         .parse(i)
 }
 
-pub fn arrayed_expr_ids(i: &[u8]) -> IResult<&[u8], Arrayed<ExprId>, ET> {
-    // arrayed_expr_ids: { lhs_array_term "#" }*
-    // lhs_array_term: {excl}
-    //                "{" { arrayed_expr_ids "," }* "}"
-    //               | expr_id
-    let term = alt((
-        ctrl('{')
-            .then_cut(arrayed_expr_ids.list1_sep_by(ctrl(',')).term_by(ctrl('}')))
-            .map(|(a, (b, c))| Arrayed::Braces(a, b, c)),
-        expr_id.map(Arrayed::Base),
-    ));
+// arrayed_exprs: { array_term "#" }*
+// array_term: {excl}
+//            "{" { arrayed_exprs "," }* "}"
+//           | expr
+// arrayed_expr_ids: { lhs_array_term "#" }*
+// lhs_array_term: {excl}
+//                "{" { arrayed_expr_ids "," }* "}"
+//               | expr_id
+#[inline]
+pub fn arrayed<'a, T, F, G>(array: F, base: G) -> impl Parser<&'a [u8], Arrayed<T>, ET<'a>>
+where
+    F: Fn(&'a [u8]) -> IResult<&'a [u8], Arrayed<T>, ET<'a>>,
+    G: Fn(&'a [u8]) -> IResult<&'a [u8], T, ET<'a>>,
+{
+    move |i| {
+        let term = alt((
+            ctrl('{')
+                .then_cut((&array).list1_sep_by(ctrl(',')).term_by(ctrl('}')))
+                .map(|(a, (b, c))| Arrayed::Braces(a, b, c)),
+            (&base).map(Arrayed::Base),
+        ));
 
-    term.list1_sep_by(ctrl('#'))
-        .p()
-        .map(Arrayed::Hashes)
-        .context("arrayed expr ids")
+        term.list1_sep_by(ctrl('#')).p().map(Arrayed::Hashes).parse(i)
+    }
+}
+
+pub fn arrayed_exprs_no_gt(i: &[u8]) -> IResult<&[u8], Arrayed<Expr>, ET> {
+    arrayed(arrayed_exprs, expr_no_gt)
+        .context("arrayed exprs no gt")
         .parse(i)
+}
+
+pub fn arrayed_exprs(i: &[u8]) -> IResult<&[u8], Arrayed<Expr>, ET> {
+    arrayed(arrayed_exprs, expr).context("arrayed exprs").parse(i)
+}
+
+pub fn arrayed_expr_ids(i: &[u8]) -> IResult<&[u8], Arrayed<ExprId>, ET> {
+    arrayed(arrayed_expr_ids, expr_id).context("arrayed expr ids").parse(i)
 }
 
 // xsparse_range: xsparse_one_range xsparse_range
