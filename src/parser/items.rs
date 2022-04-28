@@ -223,7 +223,7 @@ pub mod ast {
         Import(Kw, Import, CtrlSemi),
         Open(Kw, QualifiedName, Option<(CtrlLArrow, Ident)>, CtrlSemi),
         // These together compose the set of "definitions". Maybe they should be merged?
-        DefTemplated(OptTemplateSpec, TempaltedDef),
+        DefTemplated(OptTemplateSpec, ProclikeDecl, ProclikeBody),
         DefEnum(DefEnum),
         // Alias, Connection,Instance are the only ones shared with "BaseItem"
         Alias(Alias),
@@ -265,22 +265,6 @@ pub mod ast {
     pub struct DefEnum(pub Kw, pub Ident, pub EnumBody);
     #[derive(Debug)]
     pub struct DefIFace(pub Kw, pub Ident, pub ParenedPortFormalList, pub CtrlSemi);
-    #[derive(Debug)]
-    pub struct DefFunc(
-        pub Kw,
-        pub Ident,
-        pub ParenedPortFormalList,
-        pub CtrlColon,
-        pub FuncRetType,
-        pub FuncBody,
-    );
-
-    #[derive(Debug)]
-    pub enum TempaltedDef {
-        Proclike(DefProclike),
-        Func(DefFunc),
-        IFace(DefIFace),
-    }
 
     #[derive(Debug)]
     pub struct OverrideOneSpec(pub PhysicalInstType, pub SepList1<Ident, CtrlComma>); // (UserType, Vec<Ident>);
@@ -298,14 +282,6 @@ pub mod ast {
     #[derive(Debug)]
     pub struct IdMap(pub Ident, pub CtrlLArrow, pub Ident);
 
-    #[derive(Debug, Copy, Clone)]
-    pub enum KwProclike {
-        DefProc(Kw),
-        DefCell(Kw),
-        DefChan(Kw),
-        DefData(Kw),
-    }
-
     #[derive(Debug)]
     pub enum Method {
         Hse(Ident, CtrlLBrace, HseItemList, CtrlRBrace),
@@ -320,14 +296,23 @@ pub mod ast {
         ),
     }
 
+    #[derive(Debug, Copy, Clone)]
+    pub enum KwProclikeKind {
+        DefProc,
+        DefCell,
+        DefChan,
+        DefData,
+        DefFunc,
+        DefIFace,
+    }
     #[derive(Debug)]
-    pub struct DefProclike(
-        pub KwProclike,
+    pub struct ProclikeDecl(
+        pub (KwProclikeKind, Kw),
         pub Ident,
         pub Option<(Ctrl /* <: */, PhysicalInstType)>,
         pub ParenedPortFormalList,
         pub Option<(Ctrl /* :> */, InterfaceSpec)>,
-        pub ProclikeBody,
+        pub Option<(CtrlColon, FuncRetType)>,
     );
 
     #[derive(Debug)]
@@ -344,9 +329,6 @@ pub mod ast {
             CtrlRBrace,
         ),
     }
-
-    #[derive(Debug)]
-    pub struct FuncBody(pub ProclikeBody);
 
     // TODO add check in next pass to enforce right sort of things
     #[derive(Debug)]
@@ -877,6 +859,7 @@ fn method(i: &[u8]) -> IResult<&[u8], Method, ET> {
     method_hse.or(assign).or(macro_).parse(i)
 }
 
+// TODO for Func, add a check in the next pass that (1) there is exactly 1 chp block per function and (2) that it comes last
 fn proclike_body(i: &[u8]) -> IResult<&[u8], ProclikeBody, ET> {
     // user_type.then(ident.list1_sep_by(ctrl(',')).p());
     let one_override = physical_inst_type
@@ -908,18 +891,15 @@ fn proclike_body(i: &[u8]) -> IResult<&[u8], ProclikeBody, ET> {
     no_body.or(with_body).parse(i)
 }
 
-// TODO add a check in the next pass that (1) there is exactly 1 chp block per function and (2) that it comes last
-fn func_body(i: &[u8]) -> IResult<&[u8], FuncBody, ET> {
-    proclike_body.map(FuncBody).parse(i)
-}
-
 // This is closly coupled to the "top_items" parser below (in particular, where the "cut" is placed)
-fn templateable_def(i: &[u8]) -> IResult<&[u8], TempaltedDef, ET> {
+fn proclike_decl(i: &[u8]) -> IResult<&[u8], ProclikeDecl, ET> {
     let def_or_proc = alt((
-        kw("defproc").map(KwProclike::DefProc),
-        kw("defcell").map(KwProclike::DefCell),
-        kw("defchan").map(KwProclike::DefChan),
-        kw("defdata").map(KwProclike::DefData),
+        kw("defproc").map(|v| (KwProclikeKind::DefProc, v)),
+        kw("defcell").map(|v| (KwProclikeKind::DefCell, v)),
+        kw("defchan").map(|v| (KwProclikeKind::DefChan, v)),
+        kw("defdata").map(|v| (KwProclikeKind::DefData, v)),
+        kw("function").map(|v| (KwProclikeKind::DefFunc, v)),
+        kw("interface").map(|v| (KwProclikeKind::DefIFace, v)),
     ));
 
     let id_map = ident
@@ -931,68 +911,34 @@ fn templateable_def(i: &[u8]) -> IResult<&[u8], TempaltedDef, ET> {
         .map(|(a, (b, c, d))| InterfaceSpecItem(a, b, c, d));
     let interface_spec = interface_spec_item.list1_sep_by(ctrl(',')).p().map(InterfaceSpec);
 
-    let def_proclike_after_spec = def_or_proc
+    // we try to parse a return type after we try to parse an interface_spec because otherwise we would end up in the return_type case accedentally
+    def_or_proc
         .then_cut(
             ident
-                .then_opt(ctrl2('<', ':').then(physical_inst_type))
+                .then_opt(ctrl2('<', ':').then_cut(physical_inst_type))
                 .then(parened_port_formal_list)
-                .then_opt(ctrl2(':', '>').then(interface_spec))
-                .then(proclike_body),
+                .then_opt(ctrl2(':', '>').then_cut(interface_spec))
+                .then_opt(ctrl(':').then_cut(func_ret_type)),
         )
-        .map(|(a, ((((b, c), d), e), f))| DefProclike(a, b, c, d, e, f));
-    let def_func_after_spec = kw("function")
-        .then_cut(
-            ident
-                .then(parened_port_formal_list)
-                .then(ctrl(':'))
-                .then(func_ret_type)
-                .then(func_body),
-        )
-        .map(|(a, ((((b, c), d), e), f))| DefFunc(a, b, c, d, e, f));
-    let def_iface_after_spec = kw("interface")
-        .then_cut(ident.then(parened_port_formal_list).then(ctrl(';')))
-        .map(|(a, ((b, c), d))| DefIFace(a, b, c, d));
-    alt((
-        def_proclike_after_spec.map(TempaltedDef::Proclike),
-        def_func_after_spec.map(TempaltedDef::Func),
-        def_iface_after_spec.map(TempaltedDef::IFace),
-    ))
-    .parse(i)
+        .map(|(a, ((((b, c), d), e), f))| ProclikeDecl(a, b, c, d, e, f))
+        .parse(i)
 }
 
 fn def_templated(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
-    // There are three cases for a "def_templated" block. We break them out here so that "cut"
-    // provides nice error messages at this level of branching.
-
-    // Option 1: `export [template_spec] templatedable_def`
-    let def_templated1 = kw("export")
+    let opt_templated_spec = kw("export")
+        .opt()
         .then_opt(
             kw("template")
                 .then_cut(param_instance.list1_sep_by(ctrl(';')).ang_braced())
                 .map(|(a, (b, c, d))| (a, b, c, d)),
         )
-        .then(templateable_def)
-        .map(|((a, b), c)| TopItem::DefTemplated(OptTemplateSpec(Some(a), b), c))
-        .context("define");
+        .map(|(a, b)| OptTemplateSpec(a, b));
 
-    // Option 2: `template_spec templatedable_def`
-    let def_templated2 = kw("template")
-        .then_cut(
-            param_instance
-                .list1_sep_by(ctrl(';'))
-                .ang_braced()
-                .then(templateable_def),
-        )
-        .map(|(a, ((b, c, d), e))| TopItem::DefTemplated(OptTemplateSpec(None, Some((a, b, c, d))), e))
-        .context("define");
-
-    // Option 3: `templatedable_def`
-    let def_templated3 = templateable_def
-        .map(|a| TopItem::DefTemplated(OptTemplateSpec(None, None), a))
-        .context("define");
-
-    alt((def_templated1, def_templated2, def_templated3))
-        .context("def templated")
+    opt_templated_spec
+        .then(proclike_decl)
+        .then(proclike_body)
+        .map(|((a, b), c)| TopItem::DefTemplated(a, b, c))
+        .context("define")
         .parse(i)
 }
 

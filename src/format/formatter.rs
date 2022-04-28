@@ -263,14 +263,6 @@ impl PrAble for ParenedPortFormalList {
     }
 }
 
-impl PrAble for KwProclike {
-    fn pr(&self) -> Pra {
-        match self {
-            KwProclike::DefProc(v) | KwProclike::DefCell(v) | KwProclike::DefChan(v) | KwProclike::DefData(v) => v.pr(),
-        }
-    }
-}
-
 impl PrAble for IdMap {
     fn pr(&self) -> Pra {
         let IdMap(id, arrow, id2) = self;
@@ -292,25 +284,22 @@ impl PrAble for InterfaceSpec {
     }
 }
 
-impl PrAble for DefProclike {
+impl PrAble for ProclikeDecl {
     fn pr(&self) -> Pra {
-        let DefProclike(kw, name, derived_type, ports, spec, body) = self;
+        let ProclikeDecl((_, kw), name, derived_type, ports, spec, ret_type) = self;
         let derived_type = derived_type
             .as_ref()
             .map_or(nil(), |(ctrl, tp)| concat((space(), ctrl, space(), tp)));
         let spec = spec
             .as_ref()
             .map_or(nil(), |(ctrl, tp)| concat((space(), ctrl, space(), tp)));
-        concat((kw, space(), name, derived_type, ports, spec, body))
+        let ret_type = ret_type
+            .as_ref()
+            .map_or(nil(), |(colon, tp)| concat((space(), colon, space(), tp)));
+        concat((kw, space(), name, derived_type, ports, spec, ret_type))
     }
 }
 
-impl PrAble for FuncBody {
-    fn pr(&self) -> Pra {
-        let FuncBody(body) = self;
-        body.pr()
-    }
-}
 impl PrAble for FuncRetType {
     fn pr(&self) -> Pra {
         match self {
@@ -319,12 +308,7 @@ impl PrAble for FuncRetType {
         }
     }
 }
-impl PrAble for DefFunc {
-    fn pr(&self) -> Pra {
-        let DefFunc(kw, name, ports, colon, ret_type, body) = self;
-        concat((kw, space(), name, ports, colon, ret_type, body))
-    }
-}
+
 impl PrAble for DefIFace {
     fn pr(&self) -> Pra {
         let DefIFace(kw, name, ports, semi) = self;
@@ -332,15 +316,6 @@ impl PrAble for DefIFace {
     }
 }
 
-impl PrAble for TempaltedDef {
-    fn pr(&self) -> Pra {
-        match self {
-            TempaltedDef::Proclike(v) => v.pr(),
-            TempaltedDef::Func(v) => v.pr(),
-            TempaltedDef::IFace(v) => v.pr(),
-        }
-    }
-}
 impl PrAble for EnumBody {
     fn pr(&self) -> Pra {
         match self {
@@ -1277,19 +1252,12 @@ impl TopItem {
     fn prc(&self) -> PraChunk {
         match self {
             TopItem::Namespace(v) => v.prc(),
-            TopItem::Import(kw_import, import, semi) => {
-                let p = concat((kw_import, space(), import, semi));
-                p.chunk()
-            }
+            TopItem::Import(kw_import, import, semi) => concat((kw_import, space(), import, semi)).chunk(),
             TopItem::Open(kw_opt, name, rename, semi) => {
                 let rename = rename.map_or(nil(), |(arrow, id)| concat((space(), arrow, space(), id)));
-                let p = concat((kw_opt, space(), name, rename, semi));
-                p.chunk()
+                concat((kw_opt, space(), name, rename, semi)).chunk()
             }
-            TopItem::DefTemplated(spec, def) => {
-                let p = concat((spec, line(), def));
-                p.chunk()
-            }
+            TopItem::DefTemplated(spec, def, body) => concat((spec, line(), def, body)).chunk(),
             TopItem::DefEnum(v) => v.prc(),
             TopItem::Alias(v) => v.prc(),
             TopItem::Connection(v) => v.prc(),
