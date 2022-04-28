@@ -1,12 +1,13 @@
-extern crate rust_act;
+extern crate mylib;
+use mylib::*;
+
 use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
-use nom::error::{convert_error, VerboseError};
-use nom::combinator::all_consuming;
-use nom_supreme::error::ErrorTree;
-use rust_act::*;
-use std::path::PathBuf;
-use std::fs;
 use clap::Parser;
+use nom::combinator::all_consuming;
+use nom::error::{convert_error, VerboseError};
+use nom_supreme::error::ErrorTree;
+use std::fs;
+use std::path::PathBuf;
 
 fn lex_and_print_errors(data: &str) -> (Vec<Token>, Vec<(WhitespaceKind, &str)>) {
     let tokenized = lexer::<VerboseError<&str>>(data);

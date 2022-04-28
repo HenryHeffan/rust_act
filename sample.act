@@ -1,0 +1,35 @@
+ 
+defproc testme(chan?(int<512>) Chunk; chan?(int<256>) Digest_in; chan!(int<256>) Digest_out){
+  // variables used by the hashing code. They are reused in each instantiaation of the hashing code
+  int<256> digest_in, digest_out;
+  int<512> chunk_;
+  int<32> h0, h1, h2, h3, h4, h5, h6, h7;
+  int i;
+  int<32> a, b, c, d, e, f, g, h;
+  int<32> s0, s1, temp1, temp2, S0, S1, maj, ch;
+  int<256> bb;
+  int<32> w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15, w16, w17, w18, w19,
+      w20, w21, w22, w23, w24, w25, w26, w27, w28, w29, w30, w31, w32, w33, w34, w35, w36, w37, w38,
+      w39, w40, w41, w42, w43, w44, w45, w46, w47, w48, w49, w50, w51, w52, w53, w54, w55, w56, w57,
+      w58, w59, w60, w61, w62, w63;
+  
+  chp {
+    *[
+          Digest_in?digest_in,
+          Chunk?chunk_;
+          
+          a := (digest_in >> (0 * 32)) & 0xffffffff;
+          b := (digest_in >> (1 * 32)) & 0xffffffff;
+          c := (digest_in >> (2 * 32)) & 0xffffffff;
+          d := (digest_in >> (3 * 32)) & 0xffffffff;
+          e := (digest_in >> (4 * 32)) & 0xffffffff;
+          f := (digest_in >> (5 * 32)) & 0xffffffff;
+          g := (digest_in >> (6 * 32)) & 0xffffffff;
+          h := (digest_in >> (7 * 32)) & 0xffffffff;
+
+          Digest_out!digest_out
+    ]
+  }
+}
+
+testme a;
