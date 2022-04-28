@@ -1,12 +1,12 @@
 extern crate rust_act;
 use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
 use nom::error::{convert_error, VerboseError};
-use rust_act::*;
-
 use nom::combinator::all_consuming;
-use std::{env, fs};
-
 use nom_supreme::error::ErrorTree;
+use rust_act::*;
+use std::path::PathBuf;
+use std::fs;
+use clap::Parser;
 
 fn lex_and_print_errors(data: &str) -> (Vec<Token>, Vec<(WhitespaceKind, &str)>) {
     let tokenized = lexer::<VerboseError<&str>>(data);
@@ -112,29 +112,29 @@ fn lex_and_print_errors(data: &str) -> (Vec<Token>, Vec<(WhitespaceKind, &str)>)
 
     (tokens, final_whitespace)
 }
-
-fn print_error_tree<'a>(tl: usize, i: i32, e: &'a ErrorTree<&'a [u8]>) -> (usize, &'a ErrorTree<&'a [u8]>) {
-    let indent = (0..2 * i).map(|_| " ").collect::<String>();
-    match e {
-        ErrorTree::Alt(choices) => choices
-            .iter()
-            .map(|choice| print_error_tree(tl, i + 1, choice))
-            .min_by_key(|v| v.0.clone())
-            .unwrap(),
-        ErrorTree::Base { location, kind } => {
-            println!("{} {:?} {:?}", indent, tl - location.len(), kind);
-            (location.len(), &e)
-        }
-        ErrorTree::Stack { base, contexts } => {
-            println!(
-                "{} {:?}",
-                indent,
-                contexts.iter().map(|(l, c)| (tl - l.len(), c)).collect::<Vec<_>>()
-            );
-            print_error_tree(tl, i + 1, &base)
-        }
-    }
-}
+//
+// fn print_error_tree<'a>(tl: usize, i: i32, e: &'a ErrorTree<&'a [u8]>) -> (usize, &'a ErrorTree<&'a [u8]>) {
+//     let indent = (0..2 * i).map(|_| " ").collect::<String>();
+//     match e {
+//         ErrorTree::Alt(choices) => choices
+//             .iter()
+//             .map(|choice| print_error_tree(tl, i + 1, choice))
+//             .min_by_key(|v| v.0.clone())
+//             .unwrap(),
+//         ErrorTree::Base { location, kind } => {
+//             println!("{} {:?} {:?}", indent, tl - location.len(), kind);
+//             (location.len(), &e)
+//         }
+//         ErrorTree::Stack { base, contexts } => {
+//             println!(
+//                 "{} {:?}",
+//                 indent,
+//                 contexts.iter().map(|(l, c)| (tl - l.len(), c)).collect::<Vec<_>>()
+//             );
+//             print_error_tree(tl, i + 1, &base)
+//         }
+//     }
+// }
 
 fn get_longest_error_idx<'a>(tl: usize, i: i32, e: &'a ErrorTree<&'a [u8]>) -> usize {
     match e {
@@ -147,17 +147,37 @@ fn get_longest_error_idx<'a>(tl: usize, i: i32, e: &'a ErrorTree<&'a [u8]>) -> u
         ErrorTree::Stack { base, contexts: _ } => get_longest_error_idx(tl, i + 1, &base),
     }
 }
+// Note that the three-slash comments are actually used in the help output
+
+/// A tool to format Act code.
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Cli {
+    // TODO allow multiple paths
+    /// path of the file to update
+    #[clap()]
+    path: PathBuf,
+
+    /// overwrite the file with the formatted code
+    #[clap(short, long)]
+    inplace: bool,
+
+    // TODO move configuration into a separate file?
+    /// maximum line width
+    #[clap(short, long, default_value_t = 80)]
+    width: usize,
+}
 
 fn main() {
-    let src = fs::read_to_string(env::args().nth(1).expect("Expected file argument")).expect("Failed to read file");
-    let width = env::args().nth(2).map(|v| v.parse::<usize>().unwrap()).unwrap_or(80);
+    let args: Cli = Cli::parse();
+    let src = fs::read_to_string(&args.path).expect("Failed to read file");
     let (tokens, _) = lex_and_print_errors(&src);
     let flat_tokens = flatten_token_list(&tokens);
 
     let parsed = all_consuming(top_level)(&flat_tokens);
     let ast = match parsed {
         Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
-            print_error_tree(flat_tokens.len(), 0, &e);
+            // print_error_tree(flat_tokens.len(), 0, &e);
             // I think we should be able to tokenize any file, so this should never be used. However. Leave this code in just to be safe
             let i = get_longest_error_idx(flat_tokens.len(), 0, &e);
             let bad_token = &tokens[flat_tokens.len() - i];
@@ -180,8 +200,12 @@ fn main() {
         _ => panic!("{:?}", parsed),
     };
     let pretty_str =
-        print_pretty(&ast, &flat_tokens, &tokens, width).unwrap_or("Failed to pretty-print ast".to_string());
-    println!("{}", pretty_str);
+        print_pretty(&ast, &flat_tokens, &tokens, args.width).unwrap_or("Failed to pretty-print ast".to_string());
+    if args.inplace {
+        fs::write(&args.path, pretty_str).expect("Failed to write file");
+    } else {
+        println!("{}", pretty_str);
+    }
 }
 
 #[cfg(test)]

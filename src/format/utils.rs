@@ -389,7 +389,7 @@ impl EvaledPra {
                     let is_first = idx == 0;
                     let mut comments = chunk.0.clone();
                     // if there is not a new line at the end of the comments, add one
-                    if comments.len() > 0 && !matches!(comments.last().unwrap(), Comment::NewLine) {
+                    if comments.len() == 0 || !matches!(comments.last().unwrap(), Comment::NewLine) {
                         comments.push(Comment::NewLine)
                     }
 

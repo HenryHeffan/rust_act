@@ -9,7 +9,6 @@ use nom::{
     IResult,
 };
 use std::str;
-extern crate static_assertions as sa;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TokenKind {
