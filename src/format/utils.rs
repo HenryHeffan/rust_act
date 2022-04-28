@@ -1,5 +1,5 @@
 use crate::ast::{FTPtr, FTStart};
-use crate::parser::ast::{SepList1};
+use crate::parser::ast::SepList1;
 use crate::{FlatToken, Token, WhitespaceKind};
 use itertools::EitherOrBoth::*;
 use itertools::Itertools;
@@ -367,8 +367,6 @@ impl EvaledPra {
             EvaledPra::Group(g) => g.pretty(allocator).group(),
             EvaledPra::Nest(g, amt) => g.pretty(allocator).nest(*amt as isize),
             EvaledPra::DelimitedChunkConcat(first_require_initial_nl, items, final_comments, rparen, nest_amt) => {
-                assert!(items.len() > 0); // otherwise we need to remove all dead branches from the tree
-
                 let strip_3nl = |comments: Vec<Comment>| {
                     comments.into_iter().fold(Vec::new(), |mut v, x| {
                         if v.len() <= 1 {

@@ -136,12 +136,12 @@ impl PrAble for FuncName {
     }
 }
 
-impl PrAble for ArrayedExprIds {
+impl<T: PrAble> PrAble for Arrayed<T> {
     fn pr(&self) -> Pra {
         match self {
-            ArrayedExprIds::ExprId(e) => e.pr(),
-            ArrayedExprIds::Braces(lbrace, es, rbrace) => concat((lbrace, concat_sep1(es, space()), rbrace)),
-            ArrayedExprIds::Hashes(es) => concat_sep1(es, nil()),
+            Arrayed::Base(e) => e.pr(),
+            Arrayed::Braces(lbrace, es, rbrace) => concat((lbrace, concat_sep1(es, space()), rbrace)),
+            Arrayed::Hashes(es) => concat_sep1(es, nil()),
         }
     }
 }
@@ -159,16 +159,6 @@ impl PrAble for ExprId {
     fn pr(&self) -> Pra {
         let ExprId(ids) = self;
         concat_sep1(ids, nil())
-    }
-}
-
-impl PrAble for ArrayedExprs {
-    fn pr(&self) -> Pra {
-        match self {
-            ArrayedExprs::Expr(e) => e.pr(),
-            ArrayedExprs::Braces(lbrace, es, rbrace) => concat((lbrace, concat_sep1(es, space()), rbrace)),
-            ArrayedExprs::Hashes(es) => concat_sep1(es, nil()),
-        }
     }
 }
 
@@ -407,13 +397,10 @@ impl PrAble for PortConnSpec {
     }
 }
 
-impl PrAble for InstanceId {
+impl PrAble for ConnectionId {
     fn pr(&self) -> Pra {
-        let InstanceId(id, brackets, port_conn, attr_list, assigns) = self;
+        let ConnectionId(id, brackets, port_conn, attr_list) = self;
         let brackets = concat_map_vec(brackets, nil(), |(lbrac, e, rbrac)| concat((lbrac, e, rbrac)));
-        let assigns = concat_map_vec(assigns, nil(), |(eq, arrayed_id)| {
-            concat((space(), eq, space(), arrayed_id))
-        });
         concat((
             id,
             brackets,
@@ -423,8 +410,17 @@ impl PrAble for InstanceId {
             attr_list
                 .as_ref()
                 .map_or(nil(), |(at_sign, attrs)| concat((at_sign, attrs))),
-            assigns,
         ))
+    }
+}
+
+impl PrAble for InstanceId {
+    fn pr(&self) -> Pra {
+        let InstanceId(conn_id, assigns) = self;
+        let assigns = concat_map_vec(assigns, nil(), |(eq, arrayed_id)| {
+            concat((space(), eq, space(), arrayed_id))
+        });
+        concat((conn_id, assigns))
     }
 }
 
@@ -438,20 +434,8 @@ impl Instance {
 
 impl Connection {
     fn prc(&self) -> PraChunk {
-        let Connection(id, brackets, port_conn, attr_list, semi) = self;
-        let brackets = concat_map_vec(brackets, nil(), |(lbrac, e, rbrac)| concat((lbrac, e, rbrac)));
-        let p = concat((
-            id,
-            brackets,
-            port_conn
-                .as_ref()
-                .map_or(nil(), |(lparen, conn, rparen)| concat((lparen, conn, rparen))),
-            attr_list
-                .as_ref()
-                .map_or(nil(), |(at_sign, attrs)| concat((at_sign, attrs))),
-            semi,
-        ));
-        p.chunk()
+        let Connection(conn_id, semi) = self;
+        concat((conn_id, semi)).chunk()
     }
 }
 
@@ -849,6 +833,10 @@ impl PrAble for PrsExpr {
             PrsExpr::And(op, e1, e2) => group((e1.pr(), space(), op, line(), e2.pr())),
             PrsExpr::Or(op, e1, e2) => group((e1.pr(), space(), op, line(), e2.pr())),
             PrsExpr::Parened(lparen, e, rparen) => group((lparen, e.pr(), rparen)).group(),
+            PrsExpr::ArrAccess(e, lbrac, range, rbrac) => {
+                concat((e.pr(), lbrac, group((line_(), range, line_(), rbrac))))
+            }
+            PrsExpr::Dot(e, dot, id) => concat((e.pr(), dot, id)),
         }
     }
 }
@@ -1070,32 +1058,23 @@ impl PrAble for SizeDirectiveMacroLoop {
     }
 }
 
-impl PrAble for SizeDirective {
+impl PrAble for SizingItem {
     fn pr(&self) -> Pra {
         match self {
-            SizeDirective::Item(id, lbrace, dir_part, dir_part2, rbrace) => {
+            SizingItem::Setup(id, arrow, e) => concat((id, space(), arrow, space(), e)),
+            SizingItem::Directive(id, lbrace, dir_part, dir_part2, rbrace) => {
                 let dir_part2 = dir_part2.as_ref().map_or(nil(), |(semi, v)| concat((semi, space(), v)));
                 concat((id, lbrace, dir_part, dir_part2, rbrace))
             }
-            SizeDirective::MacroLoop(v) => v.pr(),
+            SizingItem::DirectiveMacroLoop(v) => v.pr(),
         }
     }
 }
 
 impl LangSizing {
     fn prc(&self) -> PraChunk {
-        let LangSizing(kw, lbrace, items, sizes, rbrace) = self;
-        let item = zip_map_sep1_as_chunks(items, nil(), |item| {
-            item.as_ref().map_or(nil(), |(id, e)| concat((id, space(), e)))
-        });
-        let sizes = zip_map_sep1_as_chunks(sizes, nil(), |item| item.pr());
-
-        let chunks_and_rbrace = concat_chunks(
-            true,
-            item.into_iter().chain(sizes.into_iter()).collect_vec(),
-            Some(rbrace.pr()),
-            2,
-        );
+        let LangSizing(kw, lbrace, items, rbrace) = self;
+        let chunks_and_rbrace = concat_chunks(true, zip_sep1_as_chunks(items, nil()), Some(rbrace.pr()), 2);
         concat((kw, lbrace, chunks_and_rbrace)).chunk()
     }
 }

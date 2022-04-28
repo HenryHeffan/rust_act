@@ -112,29 +112,29 @@ fn lex_and_print_errors(data: &str) -> (Vec<Token>, Vec<(WhitespaceKind, &str)>)
 
     (tokens, final_whitespace)
 }
-//
-// fn print_error_tree<'a>(tl: usize, i: i32, e: &'a ErrorTree<&'a [u8]>) -> (usize, &'a ErrorTree<&'a [u8]>) {
-//     let indent = (0..2 * i).map(|_| " ").collect::<String>();
-//     match e {
-//         ErrorTree::Alt(choices) => choices
-//             .iter()
-//             .map(|choice| print_error_tree(tl, i + 1, choice))
-//             .min_by_key(|v| v.0.clone())
-//             .unwrap(),
-//         ErrorTree::Base { location, kind } => {
-//             println!("{} {:?} {:?}", indent, tl - location.len(), kind);
-//             (location.len(), &e)
-//         }
-//         ErrorTree::Stack { base, contexts } => {
-//             println!(
-//                 "{} {:?}",
-//                 indent,
-//                 contexts.iter().map(|(l, c)| (tl - l.len(), c)).collect::<Vec<_>>()
-//             );
-//             print_error_tree(tl, i + 1, &base)
-//         }
-//     }
-// }
+
+fn print_error_tree<'a>(tl: usize, i: i32, e: &'a ErrorTree<&'a [u8]>) -> (usize, &'a ErrorTree<&'a [u8]>) {
+    let indent = (0..2 * i).map(|_| " ").collect::<String>();
+    match e {
+        ErrorTree::Alt(choices) => choices
+            .iter()
+            .map(|choice| print_error_tree(tl, i + 1, choice))
+            .min_by_key(|v| v.0.clone())
+            .unwrap(),
+        ErrorTree::Base { location, kind } => {
+            println!("{} {:?} {:?}", indent, tl - location.len(), kind);
+            (location.len(), &e)
+        }
+        ErrorTree::Stack { base, contexts } => {
+            println!(
+                "{} {:?}",
+                indent,
+                contexts.iter().map(|(l, c)| (tl - l.len(), c)).collect::<Vec<_>>()
+            );
+            print_error_tree(tl, i + 1, &base)
+        }
+    }
+}
 
 fn get_longest_error_idx<'a>(tl: usize, i: i32, e: &'a ErrorTree<&'a [u8]>) -> usize {
     match e {
@@ -157,6 +157,7 @@ fn main() {
     let parsed = all_consuming(top_level)(&flat_tokens);
     let ast = match parsed {
         Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
+            print_error_tree(flat_tokens.len(), 0, &e);
             // I think we should be able to tokenize any file, so this should never be used. However. Leave this code in just to be safe
             let i = get_longest_error_idx(flat_tokens.len(), 0, &e);
             let bad_token = &tokens[flat_tokens.len() - i];
@@ -180,7 +181,7 @@ fn main() {
     };
     let pretty_str =
         print_pretty(&ast, &flat_tokens, &tokens, width).unwrap_or("Failed to pretty-print ast".to_string());
-    println!("Pretty print:\n{}", pretty_str);
+    println!("{}", pretty_str);
 }
 
 #[cfg(test)]

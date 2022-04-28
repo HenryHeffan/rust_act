@@ -666,7 +666,7 @@ mod lang_prs {
                 ctrl(':'),
                 prs_body_row().many1().term_by(ctrl(')')).map(|(a, b)| (PrsBody(a), b)),
             )))
-            .context("macro loop")
+            .context("prs macro loop")
             .map(|(a, (b, c, d, e, (f, g)))| PrsMacroLoop(a, b, c, d, e, f, g))
             .map(PrsItem::MacroRule);
 
@@ -724,6 +724,7 @@ mod lang_prs {
             .then_opt(ctrl('*'))
             .then(prs_body_row().many0().braced().map(|(x, y, z)| (x, PrsBody(y), z)))
             .map(|(((a, b), c), (d, e, f))| LangPrs(a, b, c, d, e, f))
+            .context("prs block")
             .parse(i)
     }
 }
@@ -1027,6 +1028,7 @@ mod lang_dataflow {
                     .then(dataflow_item.list1_sep_by(ctrl(';')).term_by(ctrl('}'))),
             )
             .map(|(a, ((b, c), (d, e)))| LangDataflow(a, b, c, d, e))
+            .context("dataflow block")
             .parse(i)
     }
 }
@@ -1088,26 +1090,26 @@ mod lang_sizing {
             pub CtrlColon,
             pub ExprRange,
             pub CtrlColon,
-            pub SepList1<SizeDirective, CtrlSemi>,
+            pub SepList1<SizingItem, CtrlSemi>,
             pub CtrlRParen,
         );
         #[derive(Debug)]
-        pub enum SizeDirective {
-            Item(
+        pub enum SizingItem {
+            Setup(Ident, CtrlLArrow, Expr),
+            Directive(
                 ExprId,
                 CtrlLBrace,
                 DirectivePart,
                 Option<(CtrlSemi, DirectivePart)>,
                 CtrlRBrace,
             ),
-            MacroLoop(SizeDirectiveMacroLoop),
+            DirectiveMacroLoop(SizeDirectiveMacroLoop),
         }
         #[derive(Debug)]
         pub struct LangSizing(
             pub Kw,
             pub CtrlLBrace,
-            pub SepList1<Option<(Ident, Expr)>, CtrlSemi>,
-            pub SepList1<SizeDirective, CtrlSemi>,
+            pub SepList1<SizingItem, CtrlSemi>,
             pub CtrlRBrace,
         );
     }
@@ -1128,31 +1130,33 @@ mod lang_sizing {
             .parse(i)
     }
 
-    fn size_directive(i: &[u8]) -> IResult<&[u8], SizeDirective, ET> {
-        let directive = expr_id
+    fn sizing_item(i: &[u8]) -> IResult<&[u8], SizingItem, ET> {
+        let setup_item = ident
+            .then(ctrl2('<', '-').then_cut(expr))
+            .map(|(a, (b, c))| SizingItem::Setup(a, b, c));
+        let directive_item = expr_id
             .then(directive_part.then_opt(ctrl(';').then_cut(directive_part)).braced())
-            .map(|(a, (b, (c, d), e))| SizeDirective::Item(a, b, c, d, e));
-        let macro_loop = ctrl('(')
+            .map(|(a, (b, (c, d), e))| SizingItem::Directive(a, b, c, d, e));
+        let directive_macro_loop = ctrl('(')
             .then_cut(tuple((
                 ctrl(';'),
                 ident,
                 ctrl(':').then(expr_range).then(ctrl(':')),
-                size_directive.list1_sep_by(ctrl(';')).term_by(ctrl(')')),
+                sizing_item.list1_sep_by(ctrl(';')).term_by(ctrl(')')),
             )))
             .map(|(a, (b, c, ((d, e), f), (g, h)))| SizeDirectiveMacroLoop(a, b, c, d, e, f, g, h))
-            .map(SizeDirective::MacroLoop)
+            .map(SizingItem::DirectiveMacroLoop)
             .context("macro loop");
-        macro_loop.or(directive).parse(i)
+        alt((setup_item, directive_item, directive_macro_loop)).parse(i)
     }
 
     pub fn lang_sizing(i: &[u8]) -> IResult<&[u8], LangSizing, ET> {
-        let one_size_setup = ident.then_cut(ctrl2('<', '-').precedes(expr));
-        let size_setups = one_size_setup.opt().list1_sep_by(ctrl(';')).p();
-        let size_directives = size_directive.list1_sep_by(ctrl(';'));
-
+        // TODO enforce size_sets are before sizing directives
+        // This works because "size_setups" and "size_directives" are mutually exclusive.
         kw("sizing")
-            .then_cut(ctrl('{').then(size_setups).then(size_directives.term_by(ctrl('}'))))
-            .map(|(a, ((b, c), (d, e)))| LangSizing(a, b, c, d, e))
+            .then_cut(ctrl('{').then(sizing_item.list1_sep_by(ctrl(';')).term_by(ctrl('}'))))
+            .map(|(a, (b, (c, d)))| LangSizing(a, b, c, d))
+            .context("sizing block")
             .parse(i)
     }
 }

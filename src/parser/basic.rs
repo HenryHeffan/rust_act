@@ -90,6 +90,13 @@ pub mod ast {
         pub CtrlRBracket,
     );
 
+    #[derive(Debug)]
+    pub enum Arrayed<T> {
+        Base(T),
+        Braces(CtrlLBrace, SepList1<Self, CtrlComma>, CtrlRBrace),
+        Hashes(SepList1<Self, CtrlHash>),
+    }
+
     #[derive(Debug, Clone, Copy)]
     pub enum Dir {
         Plus,
@@ -160,13 +167,8 @@ pub mod ast {
         Call(FuncName, CtrlLParen, SepList1<Self, CtrlComma>, CtrlRParen),
         Parened(CtrlLParen, Box<Self>, CtrlRParen),
     }
+    pub type ArrayedExprs = Arrayed<Expr>;
 
-    #[derive(Debug)]
-    pub enum ArrayedExprs {
-        Expr(Expr),
-        Braces(CtrlLBrace, SepList1<Self, CtrlComma>, CtrlRBrace),
-        Hashes(SepList1<Self, CtrlHash>),
-    }
     pub type ExprRange = (Expr, Option<(CtrlDotDot, Expr)>);
     #[derive(Debug)]
     pub enum ExprOrStr {
@@ -181,14 +183,10 @@ pub mod ast {
         And(Ctrl, Box<Self>, Box<Self>),
         Or(Ctrl, Box<Self>, Box<Self>),
         Not(Ctrl, Box<Self>),
+        ArrAccess(Box<Self>, CtrlLBracket, ExprRange, CtrlRBracket),
+        Dot(Box<Self>, CtrlDot, Ident),
     }
 
-    #[derive(Debug)]
-    pub enum ArrayedExprIds {
-        ExprId(ExprId),
-        Braces(CtrlLBrace, SepList1<Self, CtrlComma>, CtrlRBrace),
-        Hashes(SepList1<Self, CtrlHash>),
-    }
     #[derive(Debug)]
     pub struct BaseId {
         pub ident: Ident,
@@ -196,6 +194,8 @@ pub mod ast {
     }
     #[derive(Debug)]
     pub struct ExprId(pub SepList1<BaseId, CtrlDot>);
+
+    pub type ArrayedExprIds = Arrayed<ExprId>;
 
     #[derive(Debug)]
     pub struct SupplySpec(
@@ -337,6 +337,19 @@ pub fn ctrl(c: char) -> CtrlC {
         '\'' => make_case!('\''),
         '@' => make_case!('@'),
         c => panic!("no such parser implemented {}", c),
+    }
+}
+
+#[inline]
+pub fn ctrl_dot_not_dotdot() -> CtrlC {
+    const PADDING: u8 = 0;
+    const DUMMY: [u8; 3] = [PADDING, PADDING, PADDING];
+    const LABEL: &'static str = ".";
+    CtrlC {
+        v: CtrlN::DotNotDotDot,
+        spaced: &DUMMY,
+        unspaced: &DUMMY,
+        label: LABEL,
     }
 }
 
@@ -510,15 +523,16 @@ where
                     .then(ctrl(']')),
             )
             .map(|(a, ((b, c), d))| AccessKind::Arr(a, b, c, d));
-        let dot_access =
-            peek(not(ctrl2('.', '.'))).ignore_then(ctrl('.').then_cut(ident).map(|(a, b)| AccessKind::Dot(a, b)));
+        let dot_access = ctrl_dot_not_dotdot()
+            .then_cut(ident)
+            .map(|(a, b)| AccessKind::Dot(a, b));
 
         let access = atom
             .then(
                 arr_access
                     .or(dot_access)
                     .many0()
-                    .term_by_peek_not_alt2(ctrl('['), ctrl('.')),
+                    .term_by_peek_not_alt2(ctrl('['), ctrl_dot_not_dotdot()),
             )
             .map(|(lhs, accs)| {
                 accs.into_iter().fold(lhs, |lhs, access| match access {
@@ -643,13 +657,13 @@ fn infix_binary_ops(i: &[u8]) -> IResult<&[u8], (BinaryOp, Ctrl), ET> {
         ctrl('-')
             .then_ignore(peek(not(ctrl('>'))))
             .map(|v| (BinaryOp::Minus, v)),
+        ctrl3('>', '>', '>').map(|v| (BinaryOp::ARShift, v)),
         ctrl2('>', '>').map(|v| (BinaryOp::RShift, v)),
         ctrl2('<', '<').map(|v| (BinaryOp::LShift, v)),
-        ctrl3('>', '>', '>').map(|v| (BinaryOp::ARShift, v)),
-        ctrl('>').map(|v| (BinaryOp::Gt, v)),
-        ctrl('<').map(|v| (BinaryOp::Lt, v)),
         ctrl2('>', '=').map(|v| (BinaryOp::Geq, v)),
         ctrl2('<', '=').map(|v| (BinaryOp::Leq, v)),
+        ctrl('>').map(|v| (BinaryOp::Gt, v)),
+        ctrl('<').map(|v| (BinaryOp::Lt, v)),
         ctrl('=').map(|v| (BinaryOp::Eq, v)),
         ctrl2('!', '=').map(|v| (BinaryOp::NotEq, v)),
         ctrl('&').map(|v| (BinaryOp::And, v)),
@@ -668,13 +682,13 @@ fn infix_binary_ops_no_gt(i: &[u8]) -> IResult<&[u8], (BinaryOp, Ctrl), ET> {
         ctrl('-')
             .then_ignore(peek(not(ctrl('>'))))
             .map(|v| (BinaryOp::Minus, v)),
+        // ctrl3('>', '>', '>').map(|v| (BinaryOp::ARShift, v)),
         // ctrl2('>', '>').map(|v| (BinaryOp::RShift, v)),
         ctrl2('<', '<').map(|v| (BinaryOp::LShift, v)),
-        // ctrl3('>', '>', '>').map(|v| (BinaryOp::ARShift, v)),
-        // ctrl('>').map(|v| (BinaryOp::Gt, v)),
-        ctrl('<').map(|v| (BinaryOp::Lt, v)),
         ctrl2('>', '=').map(|v| (BinaryOp::Geq, v)),
         ctrl2('<', '=').map(|v| (BinaryOp::Leq, v)),
+        // ctrl('>').map(|v| (BinaryOp::Gt, v)),
+        ctrl('<').map(|v| (BinaryOp::Lt, v)),
         ctrl('=').map(|v| (BinaryOp::Eq, v)),
         ctrl2('!', '=').map(|v| (BinaryOp::NotEq, v)),
         ctrl('&').map(|v| (BinaryOp::And, v)),
@@ -695,31 +709,31 @@ pub fn expr_no_gt(i: &[u8]) -> IResult<&[u8], Expr, ET> {
 // array_term: {excl}
 //            "{" { arrayed_exprs "," }* "}"
 //           | expr
-pub fn arrayed_exprs_no_gt(i: &[u8]) -> IResult<&[u8], ArrayedExprs, ET> {
+pub fn arrayed_exprs_no_gt(i: &[u8]) -> IResult<&[u8], Arrayed<Expr>, ET> {
     let term = alt((
         ctrl('{')
             .then_cut(arrayed_exprs.list1_sep_by(ctrl(',')).term_by(ctrl('}')))
-            .map(|(a, (b, c))| ArrayedExprs::Braces(a, b, c)),
-        expr_no_gt.map(ArrayedExprs::Expr),
+            .map(|(a, (b, c))| Arrayed::Braces(a, b, c)),
+        expr_no_gt.map(Arrayed::Base),
     ));
 
     term.list1_sep_by(ctrl('#'))
         .p()
-        .map(ArrayedExprs::Hashes)
+        .map(Arrayed::Hashes)
         .context("arrayed exprs no gt")
         .parse(i)
 }
-pub fn arrayed_exprs(i: &[u8]) -> IResult<&[u8], ArrayedExprs, ET> {
+pub fn arrayed_exprs(i: &[u8]) -> IResult<&[u8], Arrayed<Expr>, ET> {
     let term = alt((
         ctrl('{')
             .then_cut(arrayed_exprs.list1_sep_by(ctrl(',')).term_by(ctrl('}')))
-            .map(|(a, (b, c))| ArrayedExprs::Braces(a, b, c)),
-        expr.map(ArrayedExprs::Expr),
+            .map(|(a, (b, c))| Arrayed::Braces(a, b, c)),
+        expr.map(Arrayed::Base),
     ));
 
     term.list1_sep_by(ctrl('#'))
         .p()
-        .map(ArrayedExprs::Hashes)
+        .map(Arrayed::Hashes)
         .context("arrayed exprs")
         .parse(i)
 }
@@ -743,12 +757,36 @@ fn prs_unary_rec(i: &[u8]) -> IResult<&[u8], PrsExpr, ET> {
     ));
 
     // https://en.cppreference.com/w/c/language/operator_precedence
+    // apply function calls, array accesses, and dot operators
+    enum AccessKind {
+        // Func(Vec<Spanned<Expr>>),
+        Arr(CtrlLBracket, ExprRange, CtrlRBracket),
+        Dot(CtrlDot, Ident),
+    }
 
-    // Unary operators have precidence 2
+    let arr_access = ctrl('[')
+        .then_cut(expr_range.then(ctrl(']')))
+        .map(|(a, (b, c))| AccessKind::Arr(a, b, c));
+    let dot_access =
+        peek(not(ctrl2('.', '.'))).ignore_then(ctrl('.').then_cut(ident).map(|(a, b)| AccessKind::Dot(a, b)));
+
+    let access = atom
+        .then(
+            arr_access
+                .or(dot_access)
+                .many0()
+                .term_by_peek_not_alt2(ctrl('['), ctrl('.')),
+        )
+        .map(|(lhs, accs)| {
+            accs.into_iter().fold(lhs, |lhs, access| match access {
+                AccessKind::Arr(a, b, c) => PrsExpr::ArrAccess(Box::new(lhs), a, b, c),
+                AccessKind::Dot(a, b) => PrsExpr::Dot(Box::new(lhs), a, b),
+            })
+        });
 
     // This is an ok use of the nom version of "many0", because all of the things being parsed are 1 token long
     nom::multi::many0(ctrl('~'))
-        .then(atom)
+        .then(access)
         .map(|(ops, a)| ops.iter().rev().fold(a, |e, c| PrsExpr::Not(*c, Box::new(e))))
         .parse(i)
 }
@@ -789,7 +827,7 @@ pub fn prs_expr(i: &[u8]) -> IResult<&[u8], PrsExpr, ET> {
         .parse(i)
 }
 
-pub fn arrayed_expr_ids(i: &[u8]) -> IResult<&[u8], ArrayedExprIds, ET> {
+pub fn arrayed_expr_ids(i: &[u8]) -> IResult<&[u8], Arrayed<ExprId>, ET> {
     // arrayed_expr_ids: { lhs_array_term "#" }*
     // lhs_array_term: {excl}
     //                "{" { arrayed_expr_ids "," }* "}"
@@ -797,13 +835,13 @@ pub fn arrayed_expr_ids(i: &[u8]) -> IResult<&[u8], ArrayedExprIds, ET> {
     let term = alt((
         ctrl('{')
             .then_cut(arrayed_expr_ids.list1_sep_by(ctrl(',')).term_by(ctrl('}')))
-            .map(|(a, (b, c))| ArrayedExprIds::Braces(a, b, c)),
-        expr_id.map(ArrayedExprIds::ExprId),
+            .map(|(a, (b, c))| Arrayed::Braces(a, b, c)),
+        expr_id.map(Arrayed::Base),
     ));
 
     term.list1_sep_by(ctrl('#'))
         .p()
-        .map(ArrayedExprIds::Hashes)
+        .map(Arrayed::Hashes)
         .context("arrayed expr ids")
         .parse(i)
 }
@@ -826,7 +864,7 @@ pub fn base_id(i: &[u8]) -> IResult<&[u8], BaseId, ET> {
 
 pub fn expr_id(i: &[u8]) -> IResult<&[u8], ExprId, ET> {
     base_id
-        .list1_sep_by(ctrl('.'))
+        .list1_sep_by(ctrl_dot_not_dotdot())
         .p()
         .map(ExprId)
         .context("expr id")

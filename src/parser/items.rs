@@ -94,21 +94,17 @@ pub mod ast {
     }
 
     #[derive(Debug)]
-    pub struct Connection(
-        pub Ident,
-        pub Vec<(CtrlLBracket, Expr, CtrlRBracket)>,
-        pub Option<(CtrlLParen, PortConnSpec, CtrlRParen)>,
-        pub Option<(CtrlAtSign, BracketedAttrList)>,
-        pub CtrlSemi,
-    );
-    #[derive(Debug)]
-    pub struct InstanceId(
+    pub struct ConnectionId(
         pub Ident,
         pub Vec<(CtrlLBracket, ExprRange, CtrlRBracket)>,
         pub Option<(CtrlLParen, PortConnSpec, CtrlRParen)>,
         pub Option<(CtrlAtSign, BracketedAttrList)>,
-        pub Vec<(CtrlEquals, ArrayedExprs)>,
     );
+    #[derive(Debug)]
+    pub struct Connection(pub ConnectionId, pub CtrlSemi);
+
+    #[derive(Debug)]
+    pub struct InstanceId(pub ConnectionId, pub Vec<(CtrlEquals, ArrayedExprs)>);
     #[derive(Debug)]
     pub struct Instance(pub InstType, pub SepList1<InstanceId, CtrlComma>, pub CtrlSemi);
     #[derive(Debug)]
@@ -532,31 +528,35 @@ fn alias(i: &[u8]) -> IResult<&[u8], Alias, ET> {
         .parse(i)
 }
 
+// TODO in a connection, enforce that the range is dense!
 // dense_one_range: "[" expr "]"
 // dense_range: {t-rec}
 //             dense_one_range dense_range
 //            | dense_one_range
 // special_connection_id: ID [ dense_range ] "(" port_conn_spec ")" [ "@" attr_list ]
 //                      | ID [ dense_range ] "@" attr_list
+fn connection_id(i: &[u8]) -> IResult<&[u8], ConnectionId, ET> {
+    let opt_port_conn = ctrl('(')
+        .then_cut(port_conn_spec.then(ctrl(')')))
+        .map(|(a, (b, c))| (a, b, c))
+        .opt();
+    let opt_attr_list = ctrl('@').then_cut(attr_list).map(|(a, b)| (a, b)).opt();
+
+    let bracketed_spare_ranges = expr_range.bracketed().many0().term_by_peek_not(ctrl('['));
+    ident
+        .then(bracketed_spare_ranges)
+        .then(opt_port_conn)
+        .then(opt_attr_list)
+        .map(|(((a, b), c), d)| ConnectionId(a, b, c, d))
+        .context("connection id")
+        .parse(i)
+}
+
 // connection: special_connection_id ";"
 fn connection(i: &[u8]) -> IResult<&[u8], Connection, ET> {
-    let with_port_conn = ctrl('(')
-        .then_cut(
-            port_conn_spec
-                .then(ctrl(')'))
-                .then_opt(ctrl('@').then_cut(attr_list))
-                .then(ctrl(';')),
-        )
-        .map(|(a, (((b, c), d), e))| (Some((a, b, c)), d, e));
-    let no_port_conn = ctrl('@')
-        .then_cut(attr_list.then(ctrl(';')))
-        .map(|(a, (b, c))| (None, Some((a, b)), c));
-
-    let brackets = expr.bracketed().many0().term_by_peek_not(ctrl('['));
-    ident
-        .then(brackets)
-        .then(with_port_conn.or(no_port_conn))
-        .map(|((a, b), (c, d, e))| Connection(a, b, c, d, e))
+    connection_id
+        .then(ctrl(';'))
+        .map(|(a, b)| Connection(a, b))
         .context("connection")
         .parse(i)
 }
@@ -570,17 +570,7 @@ fn connection(i: &[u8]) -> IResult<&[u8], Connection, ET> {
 // instance: inst_type { instance_id "," }* ";"
 fn instance(i: &[u8]) -> IResult<&[u8], Instance, ET> {
     let extra_conns = ctrl('=').then(arrayed_exprs).many0().term_by_peek_not(ctrl('='));
-    let bracketed_spare_ranges = expr_range.bracketed().many0().term_by_peek_not(ctrl('['));
-    let instance_id = ident
-        .then(bracketed_spare_ranges)
-        .then_opt(
-            ctrl('(')
-                .then_cut(port_conn_spec.then(ctrl(')')))
-                .map(|(a, (b, c))| (a, b, c)),
-        )
-        .then_opt(ctrl('@').then_cut(attr_list))
-        .then(extra_conns)
-        .map(|((((a, b), c), d), e)| InstanceId(a, b, c, d, e));
+    let instance_id = connection_id.then(extra_conns).map(|(a, b)| InstanceId(a, b));
     inst_type
         .then_cut(instance_id.list1_sep_by(ctrl(',')).p().then(ctrl(';')))
         .map(|(a, (b, c))| Instance(a, b, c))
