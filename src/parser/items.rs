@@ -16,399 +16,350 @@ pub mod ast {
     use crate::parser::utils::SepList1;
 
     #[derive(Debug, Copy, Clone)]
-    pub enum ChanDir<'a> {
-        ReadOnly(Ctrl<'a>),
-        WriteOnly(Ctrl<'a>),
-        ReadWrite(Ctrl<'a>),
-        WriteRead(Ctrl<'a>),
+    pub enum ChanDir {
+        ReadOnly(Ctrl),
+        WriteOnly(Ctrl),
+        ReadWrite(Ctrl),
+        WriteRead(Ctrl),
     }
 
     #[derive(Debug)]
-    pub struct ChanType<'a>(
-        pub Kw<'a>,
-        pub Option<ChanDir<'a>>,
-        pub CtrlLParen<'a>,
-        pub PhysicalInstType<'a>,
-        pub Option<(CtrlComma<'a>, PhysicalInstType<'a>)>,
-        pub CtrlRParen<'a>,
-        pub Option<ChanDir<'a>>,
+    pub struct ChanType(
+        pub Kw,
+        pub Option<ChanDir>,
+        pub CtrlLParen,
+        pub PhysicalInstType,
+        pub Option<(CtrlComma, PhysicalInstType)>,
+        pub CtrlRParen,
+        pub Option<ChanDir>,
     );
 
     #[derive(Debug)]
-    pub enum NonChanTypeName<'a> {
-        Int(Kw<'a>),
-        Ints(Kw<'a>),
-        Bool(Kw<'a>),
-        Enum(Kw<'a>),
-        QualifiedName(QualifiedName<'a>),
+    pub enum NonChanTypeName {
+        Int(Kw),
+        Ints(Kw),
+        Bool(Kw),
+        Enum(Kw),
+        QualifiedName(QualifiedName),
     }
 
     #[derive(Debug)]
-    pub struct NonChanType<'a>(
-        pub NonChanTypeName<'a>,
-        pub Option<ChanDir<'a>>,
-        pub  Option<(
-            CtrlLAngBrace<'a>,
-            SepList1<TemplateArg<'a>, CtrlComma<'a>>,
-            CtrlRAngBrace<'a>,
-        )>,
+    pub struct NonChanType(
+        pub NonChanTypeName,
+        pub Option<ChanDir>,
+        pub Option<(CtrlLAngBrace, SepList1<TemplateArg, CtrlComma>, CtrlRAngBrace)>,
     );
 
     #[derive(Debug)]
-    pub enum PhysicalInstType<'a> {
-        ChanType(Box<ChanType<'a>>),
-        NonChanType(NonChanType<'a>),
+    pub enum PhysicalInstType {
+        ChanType(Box<ChanType>),
+        NonChanType(NonChanType),
     }
 
     #[derive(Debug)]
-    pub enum TemplateArg<'a> {
-        // UserType(UserType<'a>),
-        PhysType(CtrlAtSign<'a>, PhysicalInstType<'a>),
-        ArrayedExprs(ArrayedExprs<'a>),
+    pub enum TemplateArg {
+        // UserType(UserType),
+        PhysType(CtrlAtSign, PhysicalInstType),
+        ArrayedExprs(ArrayedExprs),
     }
 
-    pub type IFaceInstType<'a> = PhysicalInstType<'a>; // UserType<'a>;
+    pub type IFaceInstType = PhysicalInstType; // UserType;
 
     #[derive(Debug)]
-    pub enum InstType<'a> {
-        Phys(PhysicalInstType<'a>),
-        Param(ParamInstType<'a>),
-    }
-
-    #[derive(Debug)]
-    pub enum ParamInstType<'a> {
-        PInt(Kw<'a>),
-        PBool(Kw<'a>),
-        PReal(Kw<'a>),
-        PType(Kw<'a>, CtrlLParen<'a>, PhysicalInstType<'a>, CtrlRParen<'a>), // PType(UserType<'a>),
+    pub enum InstType {
+        Phys(PhysicalInstType),
+        Param(ParamInstType),
     }
 
     #[derive(Debug)]
-    pub enum FuncRetType<'a> {
-        Phys(PhysicalInstType<'a>),
-        Param(ParamInstType<'a>),
+    pub enum ParamInstType {
+        PInt(Kw),
+        PBool(Kw),
+        PReal(Kw),
+        PType(Kw, CtrlLParen, PhysicalInstType, CtrlRParen), // PType(UserType),
+    }
+
+    #[derive(Debug)]
+    pub enum FuncRetType {
+        Phys(PhysicalInstType),
+        Param(ParamInstType),
     }
 
     // Types for Connections, Instances, and Aliases
 
     #[derive(Debug)]
-    pub enum PortConnSpec<'a> {
-        Named(SepList1<(CtrlDot<'a>, Ident<'a>, CtrlEquals<'a>, ArrayedExprs<'a>), CtrlComma<'a>>),
-        Unnamed(SepList1<Option<ArrayedExprs<'a>>, CtrlComma<'a>>),
+    pub enum PortConnSpec {
+        Named(SepList1<(CtrlDot, Ident, CtrlEquals, ArrayedExprs), CtrlComma>),
+        Unnamed(SepList1<Option<ArrayedExprs>, CtrlComma>),
     }
 
     #[derive(Debug)]
-    pub struct Connection<'a>(
-        pub Ident<'a>,
-        pub Vec<(CtrlLBracket<'a>, Expr<'a>, CtrlRBracket<'a>)>,
-        pub Option<(CtrlLParen<'a>, PortConnSpec<'a>, CtrlRParen<'a>)>,
-        pub Option<(CtrlAtSign<'a>, BracketedAttrList<'a>)>,
-        pub CtrlSemi<'a>,
+    pub struct Connection(
+        pub Ident,
+        pub Vec<(CtrlLBracket, Expr, CtrlRBracket)>,
+        pub Option<(CtrlLParen, PortConnSpec, CtrlRParen)>,
+        pub Option<(CtrlAtSign, BracketedAttrList)>,
+        pub CtrlSemi,
     );
     #[derive(Debug)]
-    pub struct InstanceId<'a>(
-        pub Ident<'a>,
-        pub Vec<(CtrlLBracket<'a>, ExprRange<'a>, CtrlRBracket<'a>)>,
-        pub Option<(CtrlLParen<'a>, PortConnSpec<'a>, CtrlRParen<'a>)>,
-        pub Option<(CtrlAtSign<'a>, BracketedAttrList<'a>)>,
-        pub Vec<(CtrlEquals<'a>, ArrayedExprs<'a>)>,
+    pub struct InstanceId(
+        pub Ident,
+        pub Vec<(CtrlLBracket, ExprRange, CtrlRBracket)>,
+        pub Option<(CtrlLParen, PortConnSpec, CtrlRParen)>,
+        pub Option<(CtrlAtSign, BracketedAttrList)>,
+        pub Vec<(CtrlEquals, ArrayedExprs)>,
     );
     #[derive(Debug)]
-    pub struct Instance<'a>(
-        pub InstType<'a>,
-        pub SepList1<InstanceId<'a>, CtrlComma<'a>>,
-        pub CtrlSemi<'a>,
-    );
+    pub struct Instance(pub InstType, pub SepList1<InstanceId, CtrlComma>, pub CtrlSemi);
     #[derive(Debug)]
-    pub struct Alias<'a>(
-        pub ArrayedExprIds<'a>,
-        pub CtrlEquals<'a>,
-        pub ArrayedExprs<'a>,
-        pub CtrlSemi<'a>,
-    );
+    pub struct Alias(pub ArrayedExprIds, pub CtrlEquals, pub ArrayedExprs, pub CtrlSemi);
 
     #[derive(Debug)]
-    pub enum AliasConnOrInst<'a> {
-        Alias(Alias<'a>),
-        Connection(Connection<'a>),
-        Instance(Instance<'a>),
+    pub enum AliasConnOrInst {
+        Alias(Alias),
+        Connection(Connection),
+        Instance(Instance),
     }
 
     // Types for "base_items"
 
     #[derive(Debug)]
-    pub enum GuardedClause<'a> {
-        Expr(Expr<'a>, CtrlLArrow<'a>, Vec<BaseItem<'a>>),
-        Else(Kw<'a>, CtrlLArrow<'a>, Vec<BaseItem<'a>>),
+    pub enum GuardedClause {
+        Expr(Expr, CtrlLArrow, Vec<BaseItem>),
+        Else(Kw, CtrlLArrow, Vec<BaseItem>),
         MacroLoop(
-            CtrlLParen<'a>,
-            Ctrl<'a>, // []
-            Ident<'a>,
-            CtrlColon<'a>,
-            ExprRange<'a>,
-            CtrlColon<'a>,
-            Expr<'a>,
-            CtrlLArrow<'a>,
-            Vec<BaseItem<'a>>,
-            CtrlRParen<'a>,
+            CtrlLParen,
+            Ctrl, // []
+            Ident,
+            CtrlColon,
+            ExprRange,
+            CtrlColon,
+            Expr,
+            CtrlLArrow,
+            Vec<BaseItem>,
+            CtrlRParen,
         ),
     }
 
     #[derive(Debug)]
-    pub struct Conditional<'a>(
-        pub CtrlLBracket<'a>,
-        pub SepList1<GuardedClause<'a>, Ctrl<'a> /*[]*/>,
-        pub CtrlRBracket<'a>,
+    pub struct Conditional(
+        pub CtrlLBracket,
+        pub SepList1<GuardedClause, Ctrl /*[]*/>,
+        pub CtrlRBracket,
     );
     #[derive(Debug)]
-    pub struct BaseDynamicLoop<'a>(
-        pub Ctrl<'a>, /* `*[` */
-        pub SepList1<GuardedClause<'a>, Ctrl<'a> /*[]*/>,
-        pub CtrlRBracket<'a>,
+    pub struct BaseDynamicLoop(
+        pub Ctrl, /* `*[` */
+        pub SepList1<GuardedClause, Ctrl /*[]*/>,
+        pub CtrlRBracket,
     );
 
     #[derive(Debug, Clone, Copy)]
-    pub enum ConnOp<'a> {
-        Equal(Ctrl<'a>),
-        NotEqual(Ctrl<'a>),
+    pub enum ConnOp {
+        Equal(Ctrl),
+        NotEqual(Ctrl),
     }
 
     #[derive(Debug)]
-    pub enum AssertionPart<'a> {
-        Expr(Expr<'a>, Option<(CtrlColon<'a>, StrTok<'a>)>),
-        Conn(ExprId<'a>, ConnOp<'a>, ExprId<'a>, Option<(CtrlColon<'a>, StrTok<'a>)>),
+    pub enum AssertionPart {
+        Expr(Expr, Option<(CtrlColon, StrTok)>),
+        Conn(ExprId, ConnOp, ExprId, Option<(CtrlColon, StrTok)>),
     }
     #[derive(Debug)]
-    pub struct Assertion<'a>(
-        pub CtrlLBrace<'a>,
-        pub AssertionPart<'a>,
-        pub CtrlRBrace<'a>,
-        pub CtrlSemi<'a>,
+    pub struct Assertion(pub CtrlLBrace, pub AssertionPart, pub CtrlRBrace, pub CtrlSemi);
+
+    #[derive(Debug)]
+    pub struct DebugOutput(
+        pub Ctrl, /* ${ */
+        pub SepList1<ExprOrStr, CtrlComma>,
+        pub CtrlRBrace,
+        pub CtrlSemi,
     );
 
     #[derive(Debug)]
-    pub struct DebugOutput<'a>(
-        pub Ctrl<'a>, /* ${ */
-        pub SepList1<ExprOrStr<'a>, CtrlComma<'a>>,
-        pub CtrlRBrace<'a>,
-        pub CtrlSemi<'a>,
+    pub struct BaseMacroLoop(
+        pub CtrlLParen,
+        pub Option<CtrlSemi>,
+        pub Ident,
+        pub CtrlColon,
+        pub ExprRange,
+        pub CtrlColon,
+        pub Vec<BaseItem>,
+        pub CtrlRParen,
     );
 
     #[derive(Debug)]
-    pub struct BaseMacroLoop<'a>(
-        pub CtrlLParen<'a>,
-        pub Option<CtrlSemi<'a>>,
-        pub Ident<'a>,
-        pub CtrlColon<'a>,
-        pub ExprRange<'a>,
-        pub CtrlColon<'a>,
-        pub Vec<BaseItem<'a>>,
-        pub CtrlRParen<'a>,
-    );
-
-    #[derive(Debug)]
-    pub enum BaseItem<'a> {
-        Instance(Instance<'a>),
-        Connection(Connection<'a>),
-        Alias(Alias<'a>),
-        DynamicLoop(BaseDynamicLoop<'a>),
-        MacroLoop(BaseMacroLoop<'a>),
-        Conditional(Conditional<'a>),
-        Assertion(Assertion<'a>),
-        DebugOutput(DebugOutput<'a>),
+    pub enum BaseItem {
+        Instance(Instance),
+        Connection(Connection),
+        Alias(Alias),
+        DynamicLoop(BaseDynamicLoop),
+        MacroLoop(BaseMacroLoop),
+        Conditional(Conditional),
+        Assertion(Assertion),
+        DebugOutput(DebugOutput),
         // language bodies
-        Chp(LangChp<'a>),
-        Hse(LangHse<'a>),
-        Prs(LangPrs<'a>),
-        Spec(LangSpec<'a>),
-        Refine(LangRefine<'a>),
-        Sizing(LangSizing<'a>),
-        Initialize(LangInitialize<'a>),
-        Dataflow(LangDataflow<'a>),
+        Chp(LangChp),
+        Hse(LangHse),
+        Prs(LangPrs),
+        Spec(LangSpec),
+        Refine(LangRefine),
+        Sizing(LangSizing),
+        Initialize(LangInitialize),
+        Dataflow(LangDataflow),
     }
 
     #[derive(Debug)]
-    pub struct LangRefine<'a>(
-        pub Kw<'a>,
-        pub CtrlLBrace<'a>,
-        pub Vec<BaseItem<'a>>,
-        pub CtrlRBrace<'a>,
-    );
+    pub struct LangRefine(pub Kw, pub CtrlLBrace, pub Vec<BaseItem>, pub CtrlRBrace);
 
     // Types for "top level" items
 
     #[derive(Debug)]
-    pub enum Import<'a> {
-        String(StrTok<'a>),
-        Namespace(QualifiedName<'a>, Option<(CtrlLArrow<'a>, Ident<'a>)>),
-        Ident(Ident<'a>, Ctrl<'a> /* => */, Ident<'a>),
+    pub enum Import {
+        String(StrTok),
+        Namespace(QualifiedName, Option<(CtrlLArrow, Ident)>),
+        Ident(Ident, Ctrl /* => */, Ident),
     }
 
     #[derive(Debug)]
-    pub enum TopItem<'a> {
-        Namespace(NamespaceDecl<'a>),
-        Import(Kw<'a>, Import<'a>, CtrlSemi<'a>),
-        Open(
-            Kw<'a>,
-            QualifiedName<'a>,
-            Option<(CtrlLArrow<'a>, Ident<'a>)>,
-            CtrlSemi<'a>,
-        ),
+    pub enum TopItem {
+        Namespace(NamespaceDecl),
+        Import(Kw, Import, CtrlSemi),
+        Open(Kw, QualifiedName, Option<(CtrlLArrow, Ident)>, CtrlSemi),
         // These together compose the set of "definitions". Maybe they should be merged?
-        DefTemplated(OptTemplateSpec<'a>, TempaltedDef<'a>),
-        DefEnum(DefEnum<'a>),
+        DefTemplated(OptTemplateSpec, TempaltedDef),
+        DefEnum(DefEnum),
         // Alias, Connection,Instance are the only ones shared with "BaseItem"
-        Alias(Alias<'a>),
-        Connection(Connection<'a>),
-        Instance(Instance<'a>),
+        Alias(Alias),
+        Connection(Connection),
+        Instance(Instance),
     }
 
     #[derive(Debug)]
-    pub struct NamespaceDecl<'a>(
-        pub Option<Kw<'a>>,
-        pub Kw<'a>,
-        pub Ident<'a>,
-        pub CtrlLBrace<'a>,
-        pub Vec<TopItem<'a>>,
-        pub CtrlRBrace<'a>,
+    pub struct NamespaceDecl(
+        pub Option<Kw>,
+        pub Kw,
+        pub Ident,
+        pub CtrlLBrace,
+        pub Vec<TopItem>,
+        pub CtrlRBrace,
     );
 
     #[derive(Debug)]
-    pub enum PortFormalListItem<'a> {
-        Phys(PhysicalInstType<'a>, IdList<'a>),
-        Param(ParamInstance<'a>),
+    pub enum PortFormalListItem {
+        Phys(PhysicalInstType, IdList),
+        Param(ParamInstance),
     }
 
     #[derive(Debug)]
-    pub struct ParenedPortFormalList<'a>(
-        pub CtrlLParen<'a>,
-        pub Option<SepList1<PortFormalListItem<'a>, CtrlSemi<'a>>>,
-        pub CtrlRParen<'a>,
+    pub struct ParenedPortFormalList(
+        pub CtrlLParen,
+        pub Option<SepList1<PortFormalListItem, CtrlSemi>>,
+        pub CtrlRParen,
     );
 
     #[derive(Debug)]
-    pub struct ParamInstance<'a>(pub ParamInstType<'a>, pub IdList<'a>);
+    pub struct ParamInstance(pub ParamInstType, pub IdList);
     #[derive(Debug)]
-    pub struct OptTemplateSpec<'a>(
-        pub Option<Kw<'a>>,
-        pub  Option<(
-            Kw<'a>,
-            CtrlLAngBrace<'a>,
-            SepList1<ParamInstance<'a>, CtrlSemi<'a>>,
-            CtrlRBrace<'a>,
-        )>,
+    pub struct OptTemplateSpec(
+        pub Option<Kw>,
+        pub Option<(Kw, CtrlLAngBrace, SepList1<ParamInstance, CtrlSemi>, CtrlRBrace)>,
     );
     #[derive(Debug)]
-    pub struct DefEnum<'a>(pub Kw<'a>, pub Ident<'a>, pub EnumBody<'a>);
+    pub struct DefEnum(pub Kw, pub Ident, pub EnumBody);
     #[derive(Debug)]
-    pub struct DefIFace<'a>(
-        pub Kw<'a>,
-        pub Ident<'a>,
-        pub ParenedPortFormalList<'a>,
-        pub CtrlSemi<'a>,
-    );
+    pub struct DefIFace(pub Kw, pub Ident, pub ParenedPortFormalList, pub CtrlSemi);
     #[derive(Debug)]
-    pub struct DefFunc<'a>(
-        pub Kw<'a>,
-        pub Ident<'a>,
-        pub ParenedPortFormalList<'a>,
-        pub CtrlColon<'a>,
-        pub FuncRetType<'a>,
-        pub FuncBody<'a>,
+    pub struct DefFunc(
+        pub Kw,
+        pub Ident,
+        pub ParenedPortFormalList,
+        pub CtrlColon,
+        pub FuncRetType,
+        pub FuncBody,
     );
 
     #[derive(Debug)]
-    pub enum TempaltedDef<'a> {
-        Proclike(DefProclike<'a>),
-        Func(DefFunc<'a>),
-        IFace(DefIFace<'a>),
+    pub enum TempaltedDef {
+        Proclike(DefProclike),
+        Func(DefFunc),
+        IFace(DefIFace),
     }
 
     #[derive(Debug)]
-    pub struct OverrideOneSpec<'a>(pub PhysicalInstType<'a>, pub SepList1<Ident<'a>, CtrlComma<'a>>); // (UserType<'a>, Vec<Ident<'a>>);
+    pub struct OverrideOneSpec(pub PhysicalInstType, pub SepList1<Ident, CtrlComma>); // (UserType, Vec<Ident>);
     #[derive(Debug)]
-    pub struct OverrideSpec<'a>(
-        pub Ctrl<'a>, /* +{ */
-        pub Vec<OverrideOneSpec<'a>>,
-        pub CtrlRBrace<'a>,
+    pub struct OverrideSpec(pub Ctrl /* +{ */, pub Vec<OverrideOneSpec>, pub CtrlRBrace);
+    #[derive(Debug)]
+    pub struct InterfaceSpecItem(
+        pub IFaceInstType,
+        pub CtrlLBrace,
+        pub SepList1<IdMap, CtrlComma>,
+        pub CtrlRBrace,
     );
     #[derive(Debug)]
-    pub struct InterfaceSpecItem<'a>(
-        pub IFaceInstType<'a>,
-        pub CtrlLBrace<'a>,
-        pub SepList1<IdMap<'a>, CtrlComma<'a>>,
-        pub CtrlRBrace<'a>,
-    );
+    pub struct InterfaceSpec(pub SepList1<InterfaceSpecItem, CtrlComma>);
     #[derive(Debug)]
-    pub struct InterfaceSpec<'a>(pub SepList1<InterfaceSpecItem<'a>, CtrlComma<'a>>);
-    #[derive(Debug)]
-    pub struct IdMap<'a>(pub Ident<'a>, pub CtrlLArrow<'a>, pub Ident<'a>);
+    pub struct IdMap(pub Ident, pub CtrlLArrow, pub Ident);
 
     #[derive(Debug, Copy, Clone)]
-    pub enum KwProclike<'a> {
-        DefProc(Kw<'a>),
-        DefCell(Kw<'a>),
-        DefChan(Kw<'a>),
-        DefData(Kw<'a>),
+    pub enum KwProclike {
+        DefProc(Kw),
+        DefCell(Kw),
+        DefChan(Kw),
+        DefData(Kw),
     }
 
     #[derive(Debug)]
-    pub enum Method<'a> {
-        Hse(Ident<'a>, CtrlLBrace<'a>, HseItemList<'a>, CtrlRBrace<'a>),
-        Assign(Ident<'a>, CtrlEquals<'a>, Expr<'a>, CtrlSemi<'a>),
+    pub enum Method {
+        Hse(Ident, CtrlLBrace, HseItemList, CtrlRBrace),
+        Assign(Ident, CtrlEquals, Expr, CtrlSemi),
         Macro(
-            Kw<'a>,
-            Ident<'a>,
-            ParenedPortFormalList<'a>,
-            CtrlLBrace<'a>,
-            Option<HseItemList<'a>>,
-            CtrlRBrace<'a>,
+            Kw,
+            Ident,
+            ParenedPortFormalList,
+            CtrlLBrace,
+            Option<HseItemList>,
+            CtrlRBrace,
         ),
     }
 
     #[derive(Debug)]
-    pub struct DefProclike<'a>(
-        pub KwProclike<'a>,
-        pub Ident<'a>,
-        pub Option<(Ctrl<'a> /* <: */, PhysicalInstType<'a>)>,
-        pub ParenedPortFormalList<'a>,
-        pub Option<(Ctrl<'a> /* :> */, InterfaceSpec<'a>)>,
-        pub ProclikeBody<'a>,
+    pub struct DefProclike(
+        pub KwProclike,
+        pub Ident,
+        pub Option<(Ctrl /* <: */, PhysicalInstType)>,
+        pub ParenedPortFormalList,
+        pub Option<(Ctrl /* :> */, InterfaceSpec)>,
+        pub ProclikeBody,
     );
 
     #[derive(Debug)]
-    pub struct MethodsBody<'a>(pub Kw<'a>, pub CtrlLBrace<'a>, pub Vec<Method<'a>>, pub CtrlRBrace<'a>);
+    pub struct MethodsBody(pub Kw, pub CtrlLBrace, pub Vec<Method>, pub CtrlRBrace);
 
     #[derive(Debug)]
-    pub enum ProclikeBody<'a> {
-        NoBody(CtrlSemi<'a>),
+    pub enum ProclikeBody {
+        NoBody(CtrlSemi),
         WithBody(
-            Option<OverrideSpec<'a>>,
-            CtrlLBrace<'a>,
-            Vec<BaseItem<'a>>,
-            Option<MethodsBody<'a>>,
-            CtrlRBrace<'a>,
+            Option<OverrideSpec>,
+            CtrlLBrace,
+            Vec<BaseItem>,
+            Option<MethodsBody>,
+            CtrlRBrace,
         ),
     }
 
     #[derive(Debug)]
-    pub struct FuncBody<'a>(pub ProclikeBody<'a>);
+    pub struct FuncBody(pub ProclikeBody);
 
     // TODO add check in next pass to enforce right sort of things
     #[derive(Debug)]
-    pub enum EnumBody<'a> {
-        NoBody(CtrlSemi<'a>),
-        WithBody(
-            CtrlLBrace<'a>,
-            SepList1<Ident<'a>, CtrlComma<'a>>,
-            CtrlRBrace<'a>,
-            CtrlSemi<'a>,
-        ),
+    pub enum EnumBody {
+        NoBody(CtrlSemi),
+        WithBody(CtrlLBrace, SepList1<Ident, CtrlComma>, CtrlRBrace, CtrlSemi),
     }
     #[derive(Debug)]
-    pub struct IdList<'a>(
-        pub SepList1<(Ident<'a>, Vec<(CtrlLBracket<'a>, Expr<'a>, CtrlRBracket<'a>)>), CtrlComma<'a>>,
-    );
+    pub struct IdList(pub SepList1<(Ident, Vec<(CtrlLBracket, Expr, CtrlRBracket)>), CtrlComma>);
 }
 
 use ast::*;
@@ -713,7 +664,7 @@ pub fn alias_conn_or_inst(i: &[u8]) -> IResult<&[u8], AliasConnOrInst, ET> {
 // template_spec: [ "export" ] "template" "<" { param_inst ";" }* ">"
 //              | "export"
 
-fn guarded_clause<'a, T, OT>(peek_term_1: T, peek_term_2: T) -> impl Parser<&'a [u8], GuardedClause<'a>, ET<'a>>
+fn guarded_clause<'a, T, OT>(peek_term_1: T, peek_term_2: T) -> impl Parser<&'a [u8], GuardedClause, ET<'a>>
 where
     T: Parser<&'a [u8], OT, ET<'a>> + Clone + Copy,
 {

@@ -14,54 +14,80 @@ pub mod ast {
     use crate::parser::utils::SepList1;
 
     pub type Tok = FlatToken;
-    #[derive(Debug, Copy, Clone)]
-    pub struct Num<'a>(pub &'a Tok);
-    #[derive(Debug, Copy, Clone)]
-    pub struct Ident<'a>(pub &'a Tok);
-    #[derive(Debug, Copy, Clone)]
-    pub struct StrTok<'a>(pub &'a Tok);
-    #[derive(Debug, Copy, Clone)]
-    pub struct Kw<'a>(pub &'a Tok);
 
     #[derive(Debug, Copy, Clone)]
-    pub enum Ctrl<'a> {
-        Ctrl(&'a Tok),
-        Ctrl2(&'a Tok, &'a Tok),
-        Ctrl3(&'a Tok, &'a Tok, &'a Tok),
+    pub struct FTPtr {
+        ptr: usize,
     }
-    pub type CtrlEquals<'a> = Ctrl<'a>;
-    pub type CtrlLParen<'a> = Ctrl<'a>;
-    pub type CtrlRParen<'a> = Ctrl<'a>;
-    pub type CtrlLBracket<'a> = Ctrl<'a>;
-    pub type CtrlRBracket<'a> = Ctrl<'a>;
-    pub type CtrlLBrace<'a> = Ctrl<'a>;
-    pub type CtrlRBrace<'a> = Ctrl<'a>;
-    pub type CtrlLAngBrace<'a> = Ctrl<'a>;
-    pub type CtrlRAngBrace<'a> = Ctrl<'a>;
-    pub type CtrlDot<'a> = Ctrl<'a>;
-    pub type CtrlDotDot<'a> = Ctrl<'a>;
-    pub type CtrlColon<'a> = Ctrl<'a>;
-    pub type CtrlColonColon<'a> = Ctrl<'a>;
-    pub type CtrlComma<'a> = Ctrl<'a>;
-    pub type CtrlSemi<'a> = Ctrl<'a>;
-    pub type CtrlHash<'a> = Ctrl<'a>; // #
-    pub type CtrlLArrow<'a> = Ctrl<'a>; // ->
-    pub type CtrlAtSign<'a> = Ctrl<'a>;
-    pub type CtrlVBar<'a> = Ctrl<'a>; // |
-    pub type CtrlQMark<'a> = Ctrl<'a>;
-    pub type CtrlStar<'a> = Ctrl<'a>; // *
+    #[derive(Debug, Copy, Clone)]
+    pub struct FTStart(FTPtr);
+    impl FTPtr {
+        pub fn of_ptr(ft: &u8) -> FTPtr {
+            FTPtr {
+                ptr: ft as *const u8 as usize,
+            }
+        }
+        pub fn dummy() -> FTPtr {
+            FTPtr { ptr: 0 }
+        }
+        pub fn idx(&self, ft_start: FTStart) -> usize {
+            self.ptr - ft_start.0.ptr
+        }
+    }
+    impl FTStart {
+        pub fn of_vec(fts: &Vec<FlatToken>) -> FTStart {
+            match fts.first() {
+                None => FTStart(FTPtr::dummy()), // because there is noting in the array
+                Some(v) => FTStart(FTPtr::of_ptr(v)),
+            }
+        }
+    }
+
+    #[derive(Debug, Copy, Clone)]
+    pub struct Num(pub FTPtr);
+    #[derive(Debug, Copy, Clone)]
+    pub struct Ident(pub FTPtr);
+    #[derive(Debug, Copy, Clone)]
+    pub struct StrTok(pub FTPtr);
+    #[derive(Debug, Copy, Clone)]
+    pub struct Kw(pub FTPtr);
+
+    #[derive(Debug, Copy, Clone)]
+    pub enum Ctrl {
+        Ctrl(FTPtr),
+        Ctrl2(FTPtr, FTPtr),
+        Ctrl3(FTPtr, FTPtr, FTPtr),
+    }
+    pub type CtrlEquals = Ctrl;
+    pub type CtrlLParen = Ctrl;
+    pub type CtrlRParen = Ctrl;
+    pub type CtrlLBracket = Ctrl;
+    pub type CtrlRBracket = Ctrl;
+    pub type CtrlLBrace = Ctrl;
+    pub type CtrlRBrace = Ctrl;
+    pub type CtrlLAngBrace = Ctrl;
+    pub type CtrlRAngBrace = Ctrl;
+    pub type CtrlDot = Ctrl;
+    pub type CtrlDotDot = Ctrl;
+    pub type CtrlColon = Ctrl;
+    pub type CtrlColonColon = Ctrl;
+    pub type CtrlComma = Ctrl;
+    pub type CtrlSemi = Ctrl;
+    pub type CtrlHash = Ctrl; // #
+    pub type CtrlLArrow = Ctrl; // ->
+    pub type CtrlAtSign = Ctrl;
+    pub type CtrlVBar = Ctrl; // |
+    pub type CtrlQMark = Ctrl;
+    pub type CtrlStar = Ctrl; // *
 
     #[derive(Debug)]
-    pub struct QualifiedName<'a>(
-        pub Option<CtrlColonColon<'a>>,
-        pub SepList1<Ident<'a>, CtrlColonColon<'a>>,
-    );
+    pub struct QualifiedName(pub Option<CtrlColonColon>, pub SepList1<Ident, CtrlColonColon>);
 
     #[derive(Debug)]
-    pub struct BracketedAttrList<'a>(
-        pub CtrlLBracket<'a>,
-        pub SepList1<(Ident<'a>, CtrlEquals<'a>, Expr<'a>), CtrlSemi<'a>>,
-        pub CtrlRBracket<'a>,
+    pub struct BracketedAttrList(
+        pub CtrlLBracket,
+        pub SepList1<(Ident, CtrlEquals, Expr), CtrlSemi>,
+        pub CtrlRBracket,
     );
 
     #[derive(Debug, Clone, Copy)]
@@ -100,119 +126,111 @@ pub mod ast {
     }
 
     #[derive(Debug, Clone)]
-    pub enum FuncName<'a> {
-        Ident(Ident<'a>),
-        Int(Kw<'a>),
-        Bool(Kw<'a>),
+    pub enum FuncName {
+        Ident(Ident),
+        Int(Kw),
+        Bool(Kw),
     }
 
     // An expression node in the AST. Children are spanned so we can generate useful runtime errors.
     #[derive(Debug, Clone)]
-    pub enum Expr<'a> {
-        Num(Num<'a>),
-        Ident(Ident<'a>),
+    pub enum Expr {
+        Num(Num),
+        Ident(Ident),
         // meaning a variable or a channel that is an input to the expressions
-        Unary(UnaryOp, Ctrl<'a>, Box<Self>),
-        Binary(BinaryOp, Ctrl<'a>, Box<Self>, Box<Self>),
+        Unary(UnaryOp, Ctrl, Box<Self>),
+        Binary(BinaryOp, Ctrl, Box<Self>, Box<Self>),
         BitField(
-            Ident<'a>,
-            CtrlLBrace<'a>,
+            Ident,
+            CtrlLBrace,
             Box<Self>,
-            Option<(CtrlDotDot<'a>, Box<Self>)>,
-            CtrlRBrace<'a>,
+            Option<(CtrlDotDot, Box<Self>)>,
+            CtrlRBrace,
         ),
         ArrAccess(
             Box<Self>,
-            CtrlLBracket<'a>,
+            CtrlLBracket,
             Box<Self>,
-            Option<(CtrlDotDot<'a>, Box<Self>)>,
-            CtrlRBracket<'a>,
+            Option<(CtrlDotDot, Box<Self>)>,
+            CtrlRBracket,
         ),
-        Query(Box<Self>, CtrlQMark<'a>, Box<Self>, CtrlColon<'a>, Box<Self>),
-        Concat(CtrlLBrace<'a>, SepList1<Self, CtrlComma<'a>>, CtrlRBrace<'a>),
-        Dot(Box<Self>, CtrlDot<'a>, Ident<'a>),
-        Call(
-            FuncName<'a>,
-            CtrlLParen<'a>,
-            SepList1<Self, CtrlComma<'a>>,
-            CtrlRParen<'a>,
-        ),
-        Parened(CtrlLParen<'a>, Box<Self>, CtrlRParen<'a>),
+        Query(Box<Self>, CtrlQMark, Box<Self>, CtrlColon, Box<Self>),
+        Concat(CtrlLBrace, SepList1<Self, CtrlComma>, CtrlRBrace),
+        Dot(Box<Self>, CtrlDot, Ident),
+        Call(FuncName, CtrlLParen, SepList1<Self, CtrlComma>, CtrlRParen),
+        Parened(CtrlLParen, Box<Self>, CtrlRParen),
     }
 
     #[derive(Debug)]
-    pub enum ArrayedExprs<'a> {
-        Expr(Expr<'a>),
-        Braces(CtrlLBrace<'a>, SepList1<Self, CtrlComma<'a>>, CtrlRBrace<'a>),
-        Hashes(SepList1<Self, CtrlHash<'a>>),
+    pub enum ArrayedExprs {
+        Expr(Expr),
+        Braces(CtrlLBrace, SepList1<Self, CtrlComma>, CtrlRBrace),
+        Hashes(SepList1<Self, CtrlHash>),
     }
-    pub type ExprRange<'a> = (Expr<'a>, Option<(CtrlDotDot<'a>, Expr<'a>)>);
+    pub type ExprRange = (Expr, Option<(CtrlDotDot, Expr)>);
     #[derive(Debug)]
-    pub enum ExprOrStr<'a> {
-        Expr(Expr<'a>),
-        Str(StrTok<'a>),
-    }
-
-    #[derive(Debug)]
-    pub enum PrsExpr<'a> {
-        Ident(Ident<'a>),
-        Parened(CtrlLParen<'a>, Box<Self>, CtrlRParen<'a>),
-        And(Ctrl<'a>, Box<Self>, Box<Self>),
-        Or(Ctrl<'a>, Box<Self>, Box<Self>),
-        Not(Ctrl<'a>, Box<Self>),
+    pub enum ExprOrStr {
+        Expr(Expr),
+        Str(StrTok),
     }
 
     #[derive(Debug)]
-    pub enum ArrayedExprIds<'a> {
-        ExprId(ExprId<'a>),
-        Braces(CtrlLBrace<'a>, SepList1<Self, CtrlComma<'a>>, CtrlRBrace<'a>),
-        Hashes(SepList1<Self, CtrlHash<'a>>),
+    pub enum PrsExpr {
+        Ident(Ident),
+        Parened(CtrlLParen, Box<Self>, CtrlRParen),
+        And(Ctrl, Box<Self>, Box<Self>),
+        Or(Ctrl, Box<Self>, Box<Self>),
+        Not(Ctrl, Box<Self>),
     }
-    #[derive(Debug)]
-    pub struct BaseId<'a> {
-        pub ident: Ident<'a>,
-        pub brackets: Vec<(CtrlRBracket<'a>, ExprRange<'a>, CtrlLBracket<'a>)>,
-    }
-    #[derive(Debug)]
-    pub struct ExprId<'a>(pub SepList1<BaseId<'a>, CtrlDot<'a>>);
 
     #[derive(Debug)]
-    pub struct SupplySpec<'a>(
-        pub CtrlLAngBrace<'a>,
-        pub ExprId<'a>,
-        pub Option<(CtrlComma<'a>, ExprId<'a>)>,
-        pub Option<(CtrlVBar<'a>, ExprId<'a>, CtrlComma<'a>, ExprId<'a>)>,
-        pub CtrlRAngBrace<'a>,
+    pub enum ArrayedExprIds {
+        ExprId(ExprId),
+        Braces(CtrlLBrace, SepList1<Self, CtrlComma>, CtrlRBrace),
+        Hashes(SepList1<Self, CtrlHash>),
+    }
+    #[derive(Debug)]
+    pub struct BaseId {
+        pub ident: Ident,
+        pub brackets: Vec<(CtrlRBracket, ExprRange, CtrlLBracket)>,
+    }
+    #[derive(Debug)]
+    pub struct ExprId(pub SepList1<BaseId, CtrlDot>);
+
+    #[derive(Debug)]
+    pub struct SupplySpec(
+        pub CtrlLAngBrace,
+        pub ExprId,
+        pub Option<(CtrlComma, ExprId)>,
+        pub Option<(CtrlVBar, ExprId, CtrlComma, ExprId)>,
+        pub CtrlRAngBrace,
     );
 }
 use ast::*;
 // supply_spec: "<" expr_id [ "," expr_id ] [ "|" expr_id "," expr_id ] ">"
 
 #[inline]
-pub fn num<'a>(i: &'a [Tok]) -> IResult<&'a [Tok], Num<'a>, ET<'a>> {
+pub fn num<'a>(i: &'a [Tok]) -> IResult<&'a [Tok], Num, ET> {
     tag(&[TokenKind::Num as u8][..])
-        .map(|vs: &'a [Tok]| &vs[0])
-        .map(Num)
+        .map(|vs: &'a [Tok]| Num(FTPtr::of_ptr(&vs[0])))
         .parse(i)
 }
 #[inline]
-pub fn ident<'a>(i: &'a [Tok]) -> IResult<&'a [Tok], Ident<'a>, ET<'a>> {
+pub fn ident<'a>(i: &'a [Tok]) -> IResult<&'a [Tok], Ident, ET> {
     tag(&[TokenKind::Ident as u8][..])
-        .map(|vs: &'a [Tok]| &vs[0])
-        .map(Ident)
+        .map(|vs: &'a [Tok]| Ident(FTPtr::of_ptr(&vs[0])))
         .parse(i)
 }
 #[inline]
-pub fn string<'a>(i: &'a [Tok]) -> IResult<&'a [Tok], StrTok<'a>, ET<'a>> {
+pub fn string<'a>(i: &'a [Tok]) -> IResult<&'a [Tok], StrTok, ET> {
     tag(&[TokenKind::Str as u8][..])
-        .map(|vs: &'a [Tok]| &vs[0])
-        .map(StrTok)
+        .map(|vs: &'a [Tok]| StrTok(FTPtr::of_ptr(&vs[0])))
         .parse(i)
 }
 
 // TODO maybe make a struct for this (like CtrlC)
 #[inline]
-pub fn kw<'a>(s: &str) -> KwC {
+pub fn kw(s: &str) -> KwC {
     macro_rules! make_case {
         ($tok:expr) => {{
             const ARR: [u8; 1] = [$tok as u8];
@@ -434,9 +452,9 @@ pub fn dir(i: &[u8]) -> IResult<&[u8], (Dir, Ctrl), ET> {
     alt((ctrl('+').map(|v| (Dir::Plus, v)), ctrl('-').map(|v| (Dir::Minus, v)))).parse(i)
 }
 
-fn unary_rec<'a, F>(expr: F) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Expr<'a>, ET<'a>>
+fn unary_rec<'a, F>(expr: F) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Expr, ET>
 where
-    F: Fn(&'a [u8]) -> IResult<&'a [u8], Expr<'a>, ET<'a>>,
+    F: Fn(&'a [u8]) -> IResult<&'a [u8], Expr, ET>,
 {
     move |i| {
         // 'Atoms' are expressions that contain no ambiguity
@@ -479,15 +497,10 @@ where
         // https://en.cppreference.com/w/c/language/operator_precedence
 
         // apply function calls, array accesses, and dot operators
-        enum AccessKind<'a> {
+        enum AccessKind {
             // Func(Vec<Spanned<Expr>>),
-            Arr(
-                CtrlLBracket<'a>,
-                Expr<'a>,
-                Option<(CtrlDotDot<'a>, Box<Expr<'a>>)>,
-                CtrlRBracket<'a>,
-            ),
-            Dot(CtrlDot<'a>, Ident<'a>),
+            Arr(CtrlLBracket, Expr, Option<(CtrlDotDot, Box<Expr>)>, CtrlRBracket),
+            Dot(CtrlDot, Ident),
         }
 
         let arr_access = ctrl('[')
@@ -528,10 +541,10 @@ where
     }
 }
 
-fn binary_rec<'a, F, G>(expr: F, infix_binary_ops: G) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Expr<'a>, ET<'a>>
+fn binary_rec<'a, F, G>(expr: F, infix_binary_ops: G) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Expr, ET>
 where
-    F: Fn(&'a [u8]) -> IResult<&'a [u8], Expr<'a>, ET<'a>>,
-    G: Fn(&'a [u8]) -> IResult<&'a [u8], (BinaryOp, Ctrl<'a>), ET<'a>>,
+    F: Fn(&'a [u8]) -> IResult<&'a [u8], Expr, ET>,
+    G: Fn(&'a [u8]) -> IResult<&'a [u8], (BinaryOp, Ctrl), ET>,
 {
     move |i| {
         // In order to make it compile in a reasonable amount of time, we do binary operator parsing in two steps.
@@ -547,9 +560,8 @@ where
             .map(|(n0, ns)| {
                 // this bit of code is gross as it uses a mutable algorithm. It scans over the list [node0, nodes[0], nodes[1], ...]
                 // and combines any pair of nodes with one of the specified operations in between
-                let fold_nodes_with_ops = |node0, nodes: Vec<((BinaryOp, Ctrl<'a>), Expr<'a>)>, ops: Vec<BinaryOp>| {
-                    const DUMMY_TOK: [u8; 1] = [0u8];
-                    let dummy_ctrl = Ctrl::Ctrl(&DUMMY_TOK[0]);
+                let fold_nodes_with_ops = |node0, nodes: Vec<((BinaryOp, Ctrl), Expr)>, ops: Vec<BinaryOp>| {
+                    let dummy_ctrl = Ctrl::Ctrl(FTPtr::dummy());
                     let mut result = nodes.into_iter().fold(
                         vec![((BinaryOp::Mul /*dummy value*/, dummy_ctrl), node0)],
                         |mut ls, ((r_op, c), r)| {
@@ -584,10 +596,10 @@ where
     }
 }
 
-fn query_rec<'a, F, G>(expr: F, infix_binary_ops: G) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Expr<'a>, ET<'a>>
+fn query_rec<'a, F, G>(expr: F, infix_binary_ops: G) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Expr, ET>
 where
-    F: Fn(&'a [u8]) -> IResult<&'a [u8], Expr<'a>, ET<'a>>,
-    G: Fn(&'a [u8]) -> IResult<&'a [u8], (BinaryOp, Ctrl<'a>), ET<'a>>,
+    F: Fn(&'a [u8]) -> IResult<&'a [u8], Expr, ET>,
+    G: Fn(&'a [u8]) -> IResult<&'a [u8], (BinaryOp, Ctrl), ET>,
 {
     move |i| {
         // handles `a ? b : c ? d : e` as `a ? b : (c ? d : e)`
@@ -601,8 +613,7 @@ where
                 .term_by_peek_not(ctrl('?')),
             )
             .map(|(sel0, nodes)| {
-                let (v1s, mut sels): (Vec<((Ctrl<'a> /* ? */, Expr<'a>), Ctrl<'a> /* : */)>, Vec<Expr<'a>>) =
-                    nodes.into_iter().unzip();
+                let (v1s, mut sels): (Vec<((Ctrl /* ? */, Expr), Ctrl /* : */)>, Vec<Expr>) = nodes.into_iter().unzip();
                 if sels.len() == 0 {
                     sel0
                 } else {
@@ -698,7 +709,7 @@ pub fn arrayed_exprs_no_gt(i: &[u8]) -> IResult<&[u8], ArrayedExprs, ET> {
         .context("arrayed exprs no gt")
         .parse(i)
 }
-pub fn arrayed_exprs<'a>(i: &'a [u8]) -> IResult<&'a [u8], ArrayedExprs<'a>, ET<'a>> {
+pub fn arrayed_exprs(i: &[u8]) -> IResult<&[u8], ArrayedExprs, ET> {
     let term = alt((
         ctrl('{')
             .then_cut(arrayed_exprs.list1_sep_by(ctrl(',')).term_by(ctrl('}')))

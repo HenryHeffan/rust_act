@@ -1,5 +1,5 @@
 use super::basic::{ast::Ctrl, ctrl};
-use crate::ast::Kw;
+use crate::ast::{FTPtr, Kw};
 use core::marker::PhantomData;
 use nom;
 use nom::{
@@ -224,23 +224,23 @@ pub struct CtrlC {
     pub label: &'static str,
 }
 
-impl<'a> Parser<&'a [u8], Ctrl<'a>, ET<'a>> for CtrlC {
+impl<'a> Parser<&'a [u8], Ctrl, ET<'a>> for CtrlC {
     #[inline]
-    fn parse(&mut self, input: &'a [u8]) -> IResult<&'a [u8], Ctrl<'a>, ET<'a>> {
+    fn parse(&mut self, input: &'a [u8]) -> IResult<&'a [u8], Ctrl, ET<'a>> {
         match self.v {
             CtrlN::Char1 => tag(&self.spaced[0..1])
                 .or(tag(&self.unspaced[0..1]))
-                .map(|vs: &'a [u8]| Ctrl::Ctrl(&vs[0]))
+                .map(|vs: &[u8]| Ctrl::Ctrl(FTPtr::of_ptr(&vs[0])))
                 .context(self.label)
                 .parse(input),
             CtrlN::Char2 => tag(&self.spaced[0..2])
                 .or(tag(&self.unspaced[0..2]))
-                .map(|vs: &'a [u8]| Ctrl::Ctrl2(&vs[0], &vs[1]))
+                .map(|vs: &[u8]| Ctrl::Ctrl2(FTPtr::of_ptr(&vs[0]), FTPtr::of_ptr(&vs[1])))
                 .context(self.label)
                 .parse(input),
             CtrlN::Char3 => tag(&self.spaced[0..3])
                 .or(tag(&self.unspaced[0..3]))
-                .map(|vs: &'a [u8]| Ctrl::Ctrl3(&vs[0], &vs[1], &vs[2]))
+                .map(|vs: &[u8]| Ctrl::Ctrl3(FTPtr::of_ptr(&vs[0]), FTPtr::of_ptr(&vs[1]), FTPtr::of_ptr(&vs[2])))
                 .context(self.label)
                 .parse(input),
         }
@@ -253,11 +253,11 @@ pub struct KwC {
     pub label: &'static str,
 }
 
-impl<'a> Parser<&'a [u8], Kw<'a>, ET<'a>> for KwC {
+impl<'a> Parser<&'a [u8], Kw, ET<'a>> for KwC {
     #[inline]
-    fn parse(&mut self, input: &'a [u8]) -> IResult<&'a [u8], Kw<'a>, ET<'a>> {
+    fn parse(&mut self, input: &'a [u8]) -> IResult<&'a [u8], Kw, ET<'a>> {
         tag(&self.buf[0..1])
-            .map(|vs: &'a [u8]| Kw(&vs[0]))
+            .map(|vs: &[u8]| Kw(FTPtr::of_ptr(&vs[0])))
             .context(self.label)
             .parse(input)
     }
@@ -389,22 +389,22 @@ pub trait MyParserExt<'a, O>: Parser<&'a [u8], O, ET<'a>> + Sized {
     }
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
-    fn parened(self) -> MyDelim<Self, CtrlC, Ctrl<'a>, CtrlC, Ctrl<'a>> {
+    fn parened(self) -> MyDelim<Self, CtrlC, Ctrl, CtrlC, Ctrl> {
         self.delim_by(ctrl('('), ctrl(')'))
     }
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
-    fn braced(self) -> MyDelim<Self, CtrlC, Ctrl<'a>, CtrlC, Ctrl<'a>> {
+    fn braced(self) -> MyDelim<Self, CtrlC, Ctrl, CtrlC, Ctrl> {
         self.delim_by(ctrl('{'), ctrl('}'))
     }
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
-    fn bracketed(self) -> MyDelim<Self, CtrlC, Ctrl<'a>, CtrlC, Ctrl<'a>> {
+    fn bracketed(self) -> MyDelim<Self, CtrlC, Ctrl, CtrlC, Ctrl> {
         self.delim_by(ctrl('['), ctrl(']'))
     }
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
-    fn ang_braced(self) -> MyDelim<Self, CtrlC, Ctrl<'a>, CtrlC, Ctrl<'a>> {
+    fn ang_braced(self) -> MyDelim<Self, CtrlC, Ctrl, CtrlC, Ctrl> {
         self.delim_by(ctrl('<'), ctrl('>'))
     }
 }
@@ -696,7 +696,7 @@ impl<F, Sep> UntermT<F, Sep> {
     // functions that relay on the specifics of the "CtrlC" parser
 
     #[inline]
-    pub fn parened<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl<'a>, SepList1<OF, OS>, Ctrl<'a>), ET<'a>>
+    pub fn parened<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl, SepList1<OF, OS>, Ctrl), ET<'a>>
     where
         F: Parser<&'a [u8], OF, ET<'a>>,
         Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
@@ -704,7 +704,7 @@ impl<F, Sep> UntermT<F, Sep> {
         self.delim_by(ctrl('('), ctrl(')'))
     }
     #[inline]
-    pub fn braced<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl<'a>, SepList1<OF, OS>, Ctrl<'a>), ET<'a>>
+    pub fn braced<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl, SepList1<OF, OS>, Ctrl), ET<'a>>
     where
         F: Parser<&'a [u8], OF, ET<'a>>,
         Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
@@ -712,7 +712,7 @@ impl<F, Sep> UntermT<F, Sep> {
         self.delim_by(ctrl('{'), ctrl('}'))
     }
     #[inline]
-    pub fn ang_braced<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl<'a>, SepList1<OF, OS>, Ctrl<'a>), ET<'a>>
+    pub fn ang_braced<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl, SepList1<OF, OS>, Ctrl), ET<'a>>
     where
         F: Parser<&'a [u8], OF, ET<'a>>,
         Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
@@ -720,7 +720,7 @@ impl<F, Sep> UntermT<F, Sep> {
         self.delim_by(ctrl('<'), ctrl('>'))
     }
     #[inline]
-    pub fn bracketed<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl<'a>, SepList1<OF, OS>, Ctrl<'a>), ET<'a>>
+    pub fn bracketed<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl, SepList1<OF, OS>, Ctrl), ET<'a>>
     where
         F: Parser<&'a [u8], OF, ET<'a>>,
         Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
@@ -762,7 +762,7 @@ impl<F, Sep> OptUntermT<F, Sep> {
     // functions that relay on the specifics of the "CtrlC" parser
     //
     #[inline]
-    pub fn parened<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl<'a>, Option<SepList1<OF, OS>>, Ctrl<'a>), ET<'a>>
+    pub fn parened<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl, Option<SepList1<OF, OS>>, Ctrl), ET<'a>>
     where
         F: Parser<&'a [u8], OF, ET<'a>>,
         Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
@@ -770,7 +770,7 @@ impl<F, Sep> OptUntermT<F, Sep> {
         self.delim_by(ctrl('('), ctrl(')'))
     }
     #[inline]
-    pub fn braced<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl<'a>, Option<SepList1<OF, OS>>, Ctrl<'a>), ET<'a>>
+    pub fn braced<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl, Option<SepList1<OF, OS>>, Ctrl), ET<'a>>
     where
         F: Parser<&'a [u8], OF, ET<'a>>,
         Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
@@ -806,7 +806,7 @@ impl<F> Many0<F> {
     // functions that relay on the specifics of the "CtrlC" parser
 
     #[inline]
-    pub fn braced<'a, OF>(self) -> impl Parser<&'a [u8], (Ctrl<'a>, Vec<OF>, Ctrl<'a>), ET<'a>>
+    pub fn braced<'a, OF>(self) -> impl Parser<&'a [u8], (Ctrl, Vec<OF>, Ctrl), ET<'a>>
     where
         F: Parser<&'a [u8], OF, ET<'a>>,
     {
@@ -841,7 +841,7 @@ impl<F> Many1<F> {
     // functions that relay on the specifics of the "CtrlC" parser
 
     #[inline]
-    pub fn braced<'a, OF>(self) -> impl Parser<&'a [u8], (Ctrl<'a>, Vec<OF>, Ctrl<'a>), ET<'a>>
+    pub fn braced<'a, OF>(self) -> impl Parser<&'a [u8], (Ctrl, Vec<OF>, Ctrl), ET<'a>>
     where
         F: Parser<&'a [u8], OF, ET<'a>>,
     {

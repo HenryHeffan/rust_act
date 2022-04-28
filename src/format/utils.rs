@@ -1,4 +1,5 @@
-use crate::parser::ast::{SepList1, Tok};
+use crate::ast::{FTPtr, FTStart};
+use crate::parser::ast::{SepList1};
 use crate::{FlatToken, Token, WhitespaceKind};
 use itertools::EitherOrBoth::*;
 use itertools::Itertools;
@@ -22,7 +23,7 @@ pub enum PraSpaceKind {
 pub enum Pra {
     Nil,
     S(PraSpaceKind),
-    Tok(usize), // the index of the token
+    Tok(FTPtr), // the index of the token
     Concat(Vec<Self>),
     Group(Box<Self>),
     Nest(Box<Self>, usize),
@@ -53,13 +54,9 @@ where
     }
 }
 
-pub fn ptr_from_tok(c: &Tok) -> usize {
-    c as *const u8 as usize
-}
-
 impl Pra {
-    pub fn from_tok(c: &Tok) -> Pra {
-        Pra::Tok(ptr_from_tok(c))
+    pub fn from_tok(c: FTPtr) -> Pra {
+        Pra::Tok(c)
     }
     pub fn group(self) -> Pra {
         Pra::Group(Box::new(self))
@@ -220,14 +217,14 @@ enum EvaledPra {
 
 impl Pra {
     // remove all the nulls, and copy tokens into strings
-    fn decode<'a>(self, ft_init_loc: usize, tokens: &'a Vec<Token<'a>>) -> Option<EvaledPra> {
+    fn decode<'a>(self, ft_start: FTStart, tokens: &'a Vec<Token<'a>>) -> Option<EvaledPra> {
         match self {
             Pra::Nil => None,
             Pra::S(v) => Some(EvaledPra::S(v)),
             Pra::Concat(items) => {
                 let mut new_items = Vec::new();
                 for item in items {
-                    let g = item.decode(ft_init_loc, tokens);
+                    let g = item.decode(ft_start, tokens);
                     match g {
                         Some(g) => new_items.push(g),
                         None => (),
@@ -238,9 +235,9 @@ impl Pra {
                     false => None,
                 }
             }
-            Pra::Group(g) => g.decode(ft_init_loc, tokens).map(Box::new).map(EvaledPra::Group),
+            Pra::Group(g) => g.decode(ft_start, tokens).map(Box::new).map(EvaledPra::Group),
             Pra::Nest(g, amt) => g
-                .decode(ft_init_loc, tokens)
+                .decode(ft_start, tokens)
                 .map(Box::new)
                 .map(|v| EvaledPra::Nest(v, amt)),
             Pra::DelimitedChunkConcat(require_initial_nl, g, rparen, amt) => {
@@ -248,15 +245,15 @@ impl Pra {
                     require_initial_nl,
                     g.into_iter()
                         // a chunk should never be empty, and so should never be converted to nil
-                        .map(|PraChunk(g)| EvaledPraChunk(Vec::new(), g.decode(ft_init_loc, tokens).unwrap()))
+                        .map(|PraChunk(g)| EvaledPraChunk(Vec::new(), g.decode(ft_start, tokens).unwrap()))
                         .collect_vec(),
                     Vec::new(),
-                    rparen.map(|v| Box::new(v.decode(ft_init_loc, tokens).unwrap())), // true because we want to strip leading spacers
+                    rparen.map(|v| Box::new(v.decode(ft_start, tokens).unwrap())), // true because we want to strip leading spacers
                     amt,
                 ))
             }
             Pra::Tok(ft_loc) => {
-                let tok = &tokens[ft_loc - ft_init_loc];
+                let tok = &tokens[ft_loc.idx(ft_start)];
                 let tok_text = tok.str_.to_string();
 
                 let comments = tok
@@ -459,7 +456,7 @@ pub fn as_pretty(ast: Pra, flat_tokens: &Vec<FlatToken>, tokens: &Vec<Token>, wi
     let allocator = BoxAllocator;
     let mut mem = Vec::new();
     assert!(matches!(ast, Pra::DelimitedChunkConcat(_, _, _, _)));
-    let mut ast = ast.decode(flat_tokens.as_ptr() as usize, tokens).unwrap();
+    let mut ast = ast.decode(FTStart::of_vec(&flat_tokens), tokens).unwrap();
     ast.shift_comments();
     let result = ast
         .pretty::<_, ()>(&allocator)

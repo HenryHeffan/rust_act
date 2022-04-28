@@ -16,12 +16,12 @@ mod lang_chp_hse {
         use super::*;
 
         #[derive(Debug)]
-        pub struct LangChp<'a>(
-            pub Kw<'a>,
-            pub Option<SupplySpec<'a>>,
-            pub CtrlLBrace<'a>,
-            pub Option<ChpItemList<'a>>,
-            pub CtrlRBrace<'a>,
+        pub struct LangChp(
+            pub Kw,
+            pub Option<SupplySpec>,
+            pub CtrlLBrace,
+            pub Option<ChpItemList>,
+            pub CtrlRBrace,
         );
 
         #[derive(Debug, Copy, Clone)]
@@ -31,51 +31,46 @@ mod lang_chp_hse {
         }
 
         #[derive(Debug)]
-        pub struct ChpItem<'a>(pub Option<(Ident<'a>, CtrlColon<'a>)>, pub ChpStmt<'a>);
+        pub struct ChpItem(pub Option<(Ident, CtrlColon)>, pub ChpStmt);
         #[derive(Debug)]
-        pub struct ChpItemList<'a>(pub SepList1<SepList1<ChpItem<'a>, CtrlComma<'a>>, CtrlSemi<'a>>);
+        pub struct ChpItemList(pub SepList1<SepList1<ChpItem, CtrlComma>, CtrlSemi>);
 
         #[derive(Debug)]
-        pub struct AssignStmt<'a>(pub ExprId<'a>, pub Ctrl<'a> /* := */, pub Expr<'a>);
+        pub struct AssignStmt(pub ExprId, pub Ctrl /* := */, pub Expr);
         #[derive(Debug)]
-        pub struct AssignBoolDirStmt<'a>(pub ExprId<'a>, pub (Dir, Ctrl<'a>));
+        pub struct AssignBoolDirStmt(pub ExprId, pub (Dir, Ctrl));
 
         #[derive(Debug)]
-        pub struct ChpMacroLoop<'a>(
-            pub CtrlLParen<'a>,
-            pub (SemiOrComma, Ctrl<'a>),
-            pub Ident<'a>,
-            pub CtrlColon<'a>,
-            pub ExprRange<'a>,
-            pub CtrlColon<'a>,
-            pub ChpItemList<'a>,
-            pub CtrlRParen<'a>,
+        pub struct ChpMacroLoop(
+            pub CtrlLParen,
+            pub (SemiOrComma, Ctrl),
+            pub Ident,
+            pub CtrlColon,
+            pub ExprRange,
+            pub CtrlColon,
+            pub ChpItemList,
+            pub CtrlRParen,
         );
 
         #[derive(Debug)]
-        pub enum ChpStmt<'a> {
-            Assign(AssignStmt<'a>),
-            AssignBoolDir(AssignBoolDirStmt<'a>),
-            SendStmt(SendStmt<'a>),
-            RecvStmt(RecvStmt<'a>),
-            Skip(Kw<'a>),
-            ParenedBody(CtrlLParen<'a>, ChpItemList<'a>, CtrlRParen<'a>),
-            FuncCall(
-                Ident<'a>,
-                CtrlLParen<'a>,
-                SepList1<ExprOrStr<'a>, CtrlComma<'a>>,
-                CtrlRParen<'a>,
-            ),
+        pub enum ChpStmt {
+            Assign(AssignStmt),
+            AssignBoolDir(AssignBoolDirStmt),
+            SendStmt(SendStmt),
+            RecvStmt(RecvStmt),
+            Skip(Kw),
+            ParenedBody(CtrlLParen, ChpItemList, CtrlRParen),
+            FuncCall(Ident, CtrlLParen, SepList1<ExprOrStr, CtrlComma>, CtrlRParen),
             DottedCall(
-                BaseId<'a>,
-                CtrlDot<'a>,
-                Ident<'a>,
-                CtrlLParen<'a>,
-                SepList1<Expr<'a>, CtrlComma<'a>>,
-                CtrlRParen<'a>,
+                BaseId,
+                CtrlDot,
+                Ident,
+                CtrlLParen,
+                SepList1<Expr, CtrlComma>,
+                CtrlRParen,
             ),
-            BracketedStmt(ChpBracketedStmt<'a>),
-            MacroLoop(ChpMacroLoop<'a>),
+            BracketedStmt(ChpBracketedStmt),
+            MacroLoop(ChpMacroLoop),
         }
 
         #[derive(Debug, Copy, Clone)]
@@ -91,94 +86,80 @@ mod lang_chp_hse {
             Minus,
         }
         #[derive(Debug, Copy, Clone)]
-        pub enum RecvTypeCast<'a> {
-            AsInt(Kw<'a>, CtrlLParen<'a>, Ident<'a>, CtrlRParen<'a>),
-            AsBool(Kw<'a>, CtrlLParen<'a>, Ident<'a>, CtrlRParen<'a>),
-            Ident(Ident<'a>),
+        pub enum RecvTypeCast {
+            AsInt(Kw, CtrlLParen, Ident, CtrlRParen),
+            AsBool(Kw, CtrlLParen, Ident, CtrlRParen),
+            Ident(Ident),
         }
         #[derive(Debug)]
-        pub struct SendStmt<'a>(
-            pub ExprId<'a>,
-            pub (SendType, Ctrl<'a>),
-            pub Option<Expr<'a>>,
-            pub Option<((RecvType, Ctrl<'a>), RecvTypeCast<'a>)>,
+        pub struct SendStmt(
+            pub ExprId,
+            pub (SendType, Ctrl),
+            pub Option<Expr>,
+            pub Option<((RecvType, Ctrl), RecvTypeCast)>,
         );
         #[derive(Debug)]
-        pub struct RecvStmt<'a>(
-            pub ExprId<'a>,
-            pub (RecvType, Ctrl<'a>),
-            pub Option<RecvTypeCast<'a>>,
-            pub Option<((SendType, Ctrl<'a>), Expr<'a>)>,
+        pub struct RecvStmt(
+            pub ExprId,
+            pub (RecvType, Ctrl),
+            pub Option<RecvTypeCast>,
+            pub Option<((SendType, Ctrl), Expr)>,
         );
 
         #[derive(Debug)]
-        pub enum GuardedCmd<'a> {
-            Expr(Expr<'a>, CtrlLArrow<'a>, ChpItemList<'a>),
-            Else(Kw<'a>, CtrlLArrow<'a>, ChpItemList<'a>),
+        pub enum GuardedCmd {
+            Expr(Expr, CtrlLArrow, ChpItemList),
+            Else(Kw, CtrlLArrow, ChpItemList),
             Macro(
-                CtrlLParen<'a>,
-                Ctrl<'a>, /* [] */
-                Ident<'a>,
-                CtrlColon<'a>,
-                ExprRange<'a>,
-                CtrlColon<'a>,
-                Expr<'a>,
-                CtrlLArrow<'a>,
-                ChpItemList<'a>,
-                CtrlRParen<'a>,
+                CtrlLParen,
+                Ctrl, /* [] */
+                Ident,
+                CtrlColon,
+                ExprRange,
+                CtrlColon,
+                Expr,
+                CtrlLArrow,
+                ChpItemList,
+                CtrlRParen,
             ),
         }
 
         #[derive(Debug)]
-        pub enum ChpBracketedStmt<'a> {
-            DetermSelect(
-                CtrlLBracket<'a>,
-                SepList1<GuardedCmd<'a>, Ctrl<'a> /* [] */>,
-                CtrlRBracket<'a>,
-            ),
+        pub enum ChpBracketedStmt {
+            DetermSelect(CtrlLBracket, SepList1<GuardedCmd, Ctrl /* [] */>, CtrlRBracket),
             NonDetermSelect(
-                Ctrl<'a>, /* [| */
-                SepList1<GuardedCmd<'a>, Ctrl<'a> /* [] */>,
-                Ctrl<'a>, /* |] */
+                Ctrl, /* [| */
+                SepList1<GuardedCmd, Ctrl /* [] */>,
+                Ctrl, /* |] */
             ),
-            Wait(CtrlLBracket<'a>, Expr<'a>, CtrlRBracket<'a>),
+            Wait(CtrlLBracket, Expr, CtrlRBracket),
             DoLoop(
-                Ctrl<'a>, /* *[ */
-                ChpItemList<'a>,
-                Option<(Ctrl<'a> /* <- */, Expr<'a>)>,
-                CtrlRBracket<'a>,
+                Ctrl, /* *[ */
+                ChpItemList,
+                Option<(Ctrl /* <- */, Expr)>,
+                CtrlRBracket,
             ),
-            WhileLoop(
-                Ctrl<'a>, /* *[ */
-                SepList1<GuardedCmd<'a>, Ctrl<'a> /* [] */>,
-                CtrlRBracket<'a>,
-            ),
+            WhileLoop(Ctrl /* *[ */, SepList1<GuardedCmd, Ctrl /* [] */>, CtrlRBracket),
         }
 
         // Instead, HSE should be parsed like chp, and then checked afterwords that it is in the correct subset of chp
         #[derive(Debug)]
-        pub struct LabeledHseBody<'a>(
-            pub Ident<'a>,
-            pub CtrlColon<'a>,
-            pub HseItemList<'a>,
-            pub CtrlColon<'a>,
-            pub Ident<'a>,
-        );
+        pub struct LabeledHseBody(pub Ident, pub CtrlColon, pub HseItemList, pub CtrlColon, pub Ident);
 
         #[derive(Debug)]
-        pub enum HseBodies<'a> {
-            Body(HseItemList<'a>),
-            Labeled(SepList1<LabeledHseBody<'a>, CtrlSemi<'a>>),
+        pub enum HseBodies {
+            Body(HseItemList),
+            Labeled(SepList1<LabeledHseBody, CtrlSemi>),
         }
         #[derive(Debug)]
-        pub struct HseItemList<'a>(pub ChpItemList<'a>);
+        pub struct HseItemList(pub ChpItemList);
         #[derive(Debug)]
-        pub struct LangHse<'a>(
-            pub Kw<'a>,
-            pub Option<SupplySpec<'a>>,
-            pub CtrlLBrace<'a>,
-            pub Option<HseBodies<'a>>,
-            pub CtrlRBrace<'a>,
+        pub struct LangHse(
+            pub Kw,
+            pub Option<SupplySpec>,
+            pub CtrlLBrace,
+            pub Option<HseBodies>,
+            pub CtrlRBrace,
         );
     }
 
@@ -268,19 +249,11 @@ mod lang_chp_hse {
 
         // otherwise, it should begin with a expr_id. Therefore, to get good error messages, we will
         // parse an expr_id, and then attempt to parse the rest of one of these expressions
-        pub enum ChpStmtAfterExprId<'a> {
-            Assign(Ctrl<'a> /* := */, Expr<'a>),
-            AssignBoolDir((Dir, Ctrl<'a>)),
-            SendStmt(
-                (SendType, Ctrl<'a>),
-                Option<Expr<'a>>,
-                Option<((RecvType, Ctrl<'a>), RecvTypeCast<'a>)>,
-            ),
-            RecvStmt(
-                (RecvType, Ctrl<'a>),
-                Option<RecvTypeCast<'a>>,
-                Option<((SendType, Ctrl<'a>), Expr<'a>)>,
-            ),
+        pub enum ChpStmtAfterExprId {
+            Assign(Ctrl /* := */, Expr),
+            AssignBoolDir((Dir, Ctrl)),
+            SendStmt((SendType, Ctrl), Option<Expr>, Option<((RecvType, Ctrl), RecvTypeCast)>),
+            RecvStmt((RecvType, Ctrl), Option<RecvTypeCast>, Option<((SendType, Ctrl), Expr)>),
         }
 
         let send_stmt_after_ei = send_type
@@ -352,7 +325,7 @@ mod lang_chp_hse {
         .parse(i)
     }
 
-    fn chp_item_list1<'a>() -> Unterm<impl Parser<&'a [u8], SepList1<ChpItem<'a>, CtrlComma<'a>>, ET<'a>>> {
+    fn chp_item_list1<'a>() -> Unterm<impl Parser<&'a [u8], SepList1<ChpItem, CtrlComma>, ET<'a>>> {
         let chp_comma_list = chp_item.list1_sep_by(ctrl(',')).p();
         chp_comma_list.list1_sep_by(ctrl(';'))
     }
@@ -508,29 +481,29 @@ mod lang_prs {
         }
 
         #[derive(Debug)]
-        pub struct SizeSpec<'a>(
-            pub CtrlLAngBrace<'a>,
-            pub Expr<'a>,
-            pub Option<(CtrlComma<'a>, Expr<'a>, Option<(CtrlComma<'a>, Ident<'a>)>)>,
-            pub Option<(CtrlSemi<'a>, Expr<'a>)>,
-            pub CtrlRAngBrace<'a>,
+        pub struct SizeSpec(
+            pub CtrlLAngBrace,
+            pub Expr,
+            pub Option<(CtrlComma, Expr, Option<(CtrlComma, Ident)>)>,
+            pub Option<(CtrlSemi, Expr)>,
+            pub CtrlRAngBrace,
         );
 
         #[derive(Debug)]
-        pub enum TreeSubcktSpec<'a> {
-            Expr(Expr<'a>),
-            Str(StrTok<'a>),
+        pub enum TreeSubcktSpec {
+            Expr(Expr),
+            Str(StrTok),
         }
 
         #[derive(Debug)]
-        pub struct PrsMacroLoop<'a>(
-            pub CtrlLParen<'a>,
-            pub Ident<'a>,
-            pub CtrlColon<'a>,
-            pub ExprRange<'a>,
-            pub CtrlColon<'a>,
-            pub PrsBody<'a>,
-            pub CtrlRParen<'a>,
+        pub struct PrsMacroLoop(
+            pub CtrlLParen,
+            pub Ident,
+            pub CtrlColon,
+            pub ExprRange,
+            pub CtrlColon,
+            pub PrsBody,
+            pub CtrlRParen,
         );
 
         #[derive(Debug)]
@@ -539,61 +512,55 @@ mod lang_prs {
             P,
         }
         #[derive(Debug)]
-        pub enum PrsItem<'a> {
-            Rule(PrsExpr<'a>, (ArrowKind, Ctrl<'a>), ExprId<'a>, (Dir, Ctrl<'a>)),
-            AtRule(
-                PrsExpr<'a>,
-                (ArrowKind, Ctrl<'a>),
-                CtrlAtSign<'a>,
-                Ident<'a>,
-                (Dir, Ctrl<'a>),
-            ),
+        pub enum PrsItem {
+            Rule(PrsExpr, (ArrowKind, Ctrl), ExprId, (Dir, Ctrl)),
+            AtRule(PrsExpr, (ArrowKind, Ctrl), CtrlAtSign, Ident, (Dir, Ctrl)),
             SubBlock(
-                Ident<'a>,
-                Option<(CtrlLAngBrace<'a>, TreeSubcktSpec<'a>, CtrlRAngBrace<'a>)>,
-                CtrlLBrace<'a>,
-                PrsBody<'a>,
-                CtrlRBrace<'a>,
+                Ident,
+                Option<(CtrlLAngBrace, TreeSubcktSpec, CtrlRAngBrace)>,
+                CtrlLBrace,
+                PrsBody,
+                CtrlRBrace,
             ),
-            MacroRule(PrsMacroLoop<'a>),
+            MacroRule(PrsMacroLoop),
             Pass(
-                (PassNPKind, Kw<'a>),
-                SizeSpec<'a>,
-                CtrlLParen<'a>,
-                ExprId<'a>,
-                CtrlComma<'a>,
-                ExprId<'a>,
-                CtrlComma<'a>,
-                ExprId<'a>,
-                CtrlRParen<'a>,
+                (PassNPKind, Kw),
+                SizeSpec,
+                CtrlLParen,
+                ExprId,
+                CtrlComma,
+                ExprId,
+                CtrlComma,
+                ExprId,
+                CtrlRParen,
             ),
             TransGate(
-                Kw<'a>,
-                SizeSpec<'a>,
-                CtrlLParen<'a>,
-                ExprId<'a>,
-                CtrlComma<'a>,
-                ExprId<'a>,
-                CtrlComma<'a>,
-                ExprId<'a>,
-                CtrlComma<'a>,
-                ExprId<'a>,
-                CtrlRParen<'a>,
+                Kw,
+                SizeSpec,
+                CtrlLParen,
+                ExprId,
+                CtrlComma,
+                ExprId,
+                CtrlComma,
+                ExprId,
+                CtrlComma,
+                ExprId,
+                CtrlRParen,
             ),
         }
 
         #[derive(Debug)]
-        pub struct PrsBodyRow<'a>(pub Option<BracketedAttrList<'a>>, pub PrsItem<'a>);
+        pub struct PrsBodyRow(pub Option<BracketedAttrList>, pub PrsItem);
         #[derive(Debug)]
-        pub struct PrsBody<'a>(pub Vec<PrsBodyRow<'a>>);
+        pub struct PrsBody(pub Vec<PrsBodyRow>);
         #[derive(Debug)]
-        pub struct LangPrs<'a>(
-            pub Kw<'a>,
-            pub Option<SupplySpec<'a>>,
-            pub Option<CtrlStar<'a>>,
-            pub CtrlLBrace<'a>,
-            pub PrsBody<'a>,
-            pub CtrlRBrace<'a>,
+        pub struct LangPrs(
+            pub Kw,
+            pub Option<SupplySpec>,
+            pub Option<CtrlStar>,
+            pub CtrlLBrace,
+            pub PrsBody,
+            pub CtrlRBrace,
         );
     }
 
@@ -746,7 +713,7 @@ mod lang_prs {
     }
 
     #[inline]
-    fn prs_body_row<'a>() -> impl Parser<&'a [u8], PrsBodyRow<'a>, ET<'a>> {
+    fn prs_body_row<'a>() -> impl Parser<&'a [u8], PrsBodyRow, ET<'a>> {
         attr_list.opt().then(prs_item).map(|(a, b)| PrsBodyRow(a, b))
     }
 
@@ -776,39 +743,34 @@ mod lang_spec {
         }
 
         #[derive(Debug)]
-        pub struct TimingBodyClause<'a>(pub ExprId<'a>, pub Option<CtrlStar<'a>>, pub Option<(Dir, Ctrl<'a>)>);
+        pub struct TimingBodyClause(pub ExprId, pub Option<CtrlStar>, pub Option<(Dir, Ctrl)>);
         #[derive(Debug)]
-        pub struct TimingBody<'a>(
-            pub TimingBodyClause<'a>,
-            pub Option<CtrlQMark<'a>>,
-            pub Option<(CtrlColon<'a>, TimingBodyClause<'a>)>,
-            pub (TimingType, Ctrl<'a>),
-            pub Option<(CtrlLBracket<'a>, Expr<'a>, CtrlRBracket<'a>)>,
-            pub TimingBodyClause<'a>,
+        pub struct TimingBody(
+            pub TimingBodyClause,
+            pub Option<CtrlQMark>,
+            pub Option<(CtrlColon, TimingBodyClause)>,
+            pub (TimingType, Ctrl),
+            pub Option<(CtrlLBracket, Expr, CtrlRBracket)>,
+            pub TimingBodyClause,
         );
 
         #[derive(Debug)]
-        pub enum SpecItem<'a> {
-            Normal(
-                Ident<'a>,
-                CtrlLParen<'a>,
-                SepList1<ExprId<'a>, CtrlComma<'a>>,
-                CtrlRParen<'a>,
-            ),
-            Timing(Kw<'a>, TimingBody<'a>),
+        pub enum SpecItem {
+            Normal(Ident, CtrlLParen, SepList1<ExprId, CtrlComma>, CtrlRParen),
+            Timing(Kw, TimingBody),
         }
 
         #[derive(Debug)]
-        pub struct SpecBody<'a> {
-            pub lbrace: CtrlLBrace<'a>,
-            pub requires_clause: Option<(Kw<'a>, (CtrlLBrace<'a>, Vec<SpecItem<'a>>, CtrlRBrace<'a>))>,
-            pub ensures_clause: Option<(Kw<'a>, (CtrlLBrace<'a>, Vec<SpecItem<'a>>, CtrlRBrace<'a>))>,
-            pub generic_clause: Vec<SpecItem<'a>>,
-            pub rbrace: CtrlRBrace<'a>,
+        pub struct SpecBody {
+            pub lbrace: CtrlLBrace,
+            pub requires_clause: Option<(Kw, (CtrlLBrace, Vec<SpecItem>, CtrlRBrace))>,
+            pub ensures_clause: Option<(Kw, (CtrlLBrace, Vec<SpecItem>, CtrlRBrace))>,
+            pub generic_clause: Vec<SpecItem>,
+            pub rbrace: CtrlRBrace,
         }
 
         #[derive(Debug)]
-        pub struct LangSpec<'a>(pub Kw<'a>, pub SpecBody<'a>);
+        pub struct LangSpec(pub Kw, pub SpecBody);
     }
 
     use ast::*;
@@ -909,16 +871,16 @@ mod lang_dataflow {
         use crate::parser::utils::SepList1;
 
         #[derive(Debug)]
-        pub enum ExprIdOrStar<'a> {
-            ExprId(ExprId<'a>),
-            Star(CtrlStar<'a>),
+        pub enum ExprIdOrStar {
+            ExprId(ExprId),
+            Star(CtrlStar),
         }
 
         #[derive(Debug)]
-        pub enum ExprIdOrStarOrBar<'a> {
-            ExprId(ExprId<'a>),
-            Star(CtrlStar<'a>),
-            Bar(CtrlVBar<'a>),
+        pub enum ExprIdOrStarOrBar {
+            ExprId(ExprId),
+            Star(CtrlStar),
+            Bar(CtrlVBar),
         }
 
         #[derive(Debug, Clone, Copy)]
@@ -928,52 +890,52 @@ mod lang_dataflow {
         }
 
         #[derive(Debug)]
-        pub enum DataflowItem<'a> {
+        pub enum DataflowItem {
             BracketedOrParenedFlow(
-                Expr<'a>,
-                CtrlLArrow<'a>,
+                Expr,
+                CtrlLArrow,
                 Option<(
                     BracketedOrParened,
-                    Ctrl<'a>, /* [ OR ( */
-                    Expr<'a>,
-                    Option<(Ctrl<'a>, Expr<'a>)>,
-                    Ctrl<'a>, /* ] OR ) */
+                    Ctrl, /* [ OR ( */
+                    Expr,
+                    Option<(Ctrl, Expr)>,
+                    Ctrl, /* ] OR ) */
                 )>,
-                ExprId<'a>,
+                ExprId,
             ),
             BracedFlow(
-                CtrlLBrace<'a>,
-                ExprIdOrStarOrBar<'a>,
-                CtrlRBrace<'a>,
-                SepList1<ExprIdOrStar<'a>, CtrlComma<'a>>,
-                CtrlLArrow<'a>,
-                SepList1<ExprIdOrStar<'a>, CtrlComma<'a>>,
+                CtrlLBrace,
+                ExprIdOrStarOrBar,
+                CtrlRBrace,
+                SepList1<ExprIdOrStar, CtrlComma>,
+                CtrlLArrow,
+                SepList1<ExprIdOrStar, CtrlComma>,
             ),
-            Cluster(Kw<'a>, CtrlLBrace<'a>, SepList1<Self, CtrlSemi<'a>>, CtrlRBrace<'a>),
-            Sink(ExprId<'a>, CtrlLArrow<'a>, CtrlStar<'a>),
+            Cluster(Kw, CtrlLBrace, SepList1<Self, CtrlSemi>, CtrlRBrace),
+            Sink(ExprId, CtrlLArrow, CtrlStar),
         }
 
         #[derive(Debug)]
-        pub struct DataflowOrdering<'a>(
-            pub Ident<'a>,
-            pub CtrlLBrace<'a>,
+        pub struct DataflowOrdering(
+            pub Ident,
+            pub CtrlLBrace,
             pub  SepList1<
                 (
-                    SepList1<ExprId<'a>, CtrlComma<'a>>,
-                    Ctrl<'a>, /* < */
-                    SepList1<ExprId<'a>, CtrlComma<'a>>,
+                    SepList1<ExprId, CtrlComma>,
+                    Ctrl, /* < */
+                    SepList1<ExprId, CtrlComma>,
                 ),
-                CtrlSemi<'a>,
+                CtrlSemi,
             >,
-            pub CtrlRBrace<'a>,
+            pub CtrlRBrace,
         );
         #[derive(Debug)]
-        pub struct LangDataflow<'a>(
-            pub Kw<'a>,
-            pub CtrlLBrace<'a>,
-            pub Option<DataflowOrdering<'a>>,
-            pub SepList1<DataflowItem<'a>, CtrlSemi<'a>>,
-            pub CtrlRBrace<'a>,
+        pub struct LangDataflow(
+            pub Kw,
+            pub CtrlLBrace,
+            pub Option<DataflowOrdering>,
+            pub SepList1<DataflowItem, CtrlSemi>,
+            pub CtrlRBrace,
         );
     }
 
@@ -1080,18 +1042,13 @@ mod lang_initialize {
         use crate::parser::utils::SepList1;
 
         #[derive(Debug)]
-        pub struct ActionItem<'a>(
-            pub Ident<'a>,
-            pub CtrlLBrace<'a>,
-            pub HseItemList<'a>,
-            pub CtrlRBrace<'a>,
-        );
+        pub struct ActionItem(pub Ident, pub CtrlLBrace, pub HseItemList, pub CtrlRBrace);
         #[derive(Debug)]
-        pub struct LangInitialize<'a>(
-            pub Kw<'a>,
-            pub CtrlLBrace<'a>,
-            pub SepList1<ActionItem<'a>, CtrlSemi<'a>>,
-            pub CtrlRBrace<'a>,
+        pub struct LangInitialize(
+            pub Kw,
+            pub CtrlLBrace,
+            pub SepList1<ActionItem, CtrlSemi>,
+            pub CtrlRBrace,
         );
     }
 
@@ -1117,41 +1074,41 @@ mod lang_sizing {
         use super::*;
         use crate::parser::utils::SepList1;
         #[derive(Debug)]
-        pub struct DirectivePart<'a>(
-            pub (Dir, Ctrl<'a>),
-            pub Expr<'a>,
-            pub Option<(CtrlComma<'a>, (Ident<'a>, Option<(CtrlComma<'a>, Expr<'a>)>))>,
+        pub struct DirectivePart(
+            pub (Dir, Ctrl),
+            pub Expr,
+            pub Option<(CtrlComma, (Ident, Option<(CtrlComma, Expr)>))>,
         );
 
         #[derive(Debug)]
-        pub struct SizeDirectiveMacroLoop<'a>(
-            pub CtrlLParen<'a>,
-            pub CtrlSemi<'a>,
-            pub Ident<'a>,
-            pub CtrlColon<'a>,
-            pub ExprRange<'a>,
-            pub CtrlColon<'a>,
-            pub SepList1<SizeDirective<'a>, CtrlSemi<'a>>,
-            pub CtrlRParen<'a>,
+        pub struct SizeDirectiveMacroLoop(
+            pub CtrlLParen,
+            pub CtrlSemi,
+            pub Ident,
+            pub CtrlColon,
+            pub ExprRange,
+            pub CtrlColon,
+            pub SepList1<SizeDirective, CtrlSemi>,
+            pub CtrlRParen,
         );
         #[derive(Debug)]
-        pub enum SizeDirective<'a> {
+        pub enum SizeDirective {
             Item(
-                ExprId<'a>,
-                CtrlLBrace<'a>,
-                DirectivePart<'a>,
-                Option<(CtrlSemi<'a>, DirectivePart<'a>)>,
-                CtrlRBrace<'a>,
+                ExprId,
+                CtrlLBrace,
+                DirectivePart,
+                Option<(CtrlSemi, DirectivePart)>,
+                CtrlRBrace,
             ),
-            MacroLoop(SizeDirectiveMacroLoop<'a>),
+            MacroLoop(SizeDirectiveMacroLoop),
         }
         #[derive(Debug)]
-        pub struct LangSizing<'a>(
-            pub Kw<'a>,
-            pub CtrlLBrace<'a>,
-            pub SepList1<Option<(Ident<'a>, Expr<'a>)>, CtrlSemi<'a>>,
-            pub SepList1<SizeDirective<'a>, CtrlSemi<'a>>,
-            pub CtrlRBrace<'a>,
+        pub struct LangSizing(
+            pub Kw,
+            pub CtrlLBrace,
+            pub SepList1<Option<(Ident, Expr)>, CtrlSemi>,
+            pub SepList1<SizeDirective, CtrlSemi>,
+            pub CtrlRBrace,
         );
     }
     use ast::*;

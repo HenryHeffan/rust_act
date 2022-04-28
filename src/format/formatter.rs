@@ -4,37 +4,37 @@ use crate::token::Token;
 use crate::FlatToken;
 use itertools::Itertools;
 
-impl<'a> PrAble for Ctrl<'a> {
+impl PrAble for Ctrl {
     fn pr(&self) -> Pra {
         match self {
-            Ctrl::Ctrl(c1) => Pra::from_tok(c1),
-            Ctrl::Ctrl2(c1, c2) => concat((Pra::from_tok(c1), Pra::from_tok(c2))),
-            Ctrl::Ctrl3(c1, c2, c3) => concat((Pra::from_tok(c1), Pra::from_tok(c2), Pra::from_tok(c3))),
+            Ctrl::Ctrl(c1) => Pra::from_tok(*c1),
+            Ctrl::Ctrl2(c1, c2) => concat((Pra::from_tok(*c1), Pra::from_tok(*c2))),
+            Ctrl::Ctrl3(c1, c2, c3) => concat((Pra::from_tok(*c1), Pra::from_tok(*c2), Pra::from_tok(*c3))),
         }
     }
 }
-impl<'a> PrAble for Ident<'a> {
+impl PrAble for Ident {
     fn pr(&self) -> Pra {
         Pra::from_tok(self.0)
     }
 }
-impl<'a> PrAble for Kw<'a> {
+impl PrAble for Kw {
     fn pr(&self) -> Pra {
         Pra::from_tok(self.0)
     }
 }
-impl<'a> PrAble for Num<'a> {
+impl PrAble for Num {
     fn pr(&self) -> Pra {
         Pra::from_tok(self.0)
     }
 }
-impl<'a> PrAble for StrTok<'a> {
+impl PrAble for StrTok {
     fn pr(&self) -> Pra {
         Pra::from_tok(self.0)
     }
 }
 
-impl<'a> PrAble for QualifiedName<'a> {
+impl PrAble for QualifiedName {
     fn pr(&self) -> Pra {
         let QualifiedName(cc, items) = self;
         let items = concat_sep1(items, space());
@@ -45,7 +45,7 @@ impl<'a> PrAble for QualifiedName<'a> {
     }
 }
 
-impl<'a> PrAble for ChanDir<'a> {
+impl PrAble for ChanDir {
     fn pr(&self) -> Pra {
         match self {
             ChanDir::ReadOnly(v) | ChanDir::WriteOnly(v) | ChanDir::ReadWrite(v) | ChanDir::WriteRead(v) => v.pr(),
@@ -53,7 +53,7 @@ impl<'a> PrAble for ChanDir<'a> {
     }
 }
 
-impl<'a> PrAble for ChanType<'a> {
+impl PrAble for ChanType {
     fn pr(&self) -> Pra {
         let ChanType(kw, chan_dir, lparen, inst_type, inst_type_2, rparen, chan_dir_2) = self;
         concat((
@@ -70,7 +70,7 @@ impl<'a> PrAble for ChanType<'a> {
     }
 }
 
-impl<'a> PrAble for TemplateArg<'a> {
+impl PrAble for TemplateArg {
     fn pr(&self) -> Pra {
         match self {
             TemplateArg::PhysType(at_sign, tp) => concat((at_sign, tp)),
@@ -79,7 +79,7 @@ impl<'a> PrAble for TemplateArg<'a> {
     }
 }
 
-impl<'a> PrAble for NonChanTypeName<'a> {
+impl PrAble for NonChanTypeName {
     fn pr(&self) -> Pra {
         match self {
             NonChanTypeName::Int(v)
@@ -90,7 +90,7 @@ impl<'a> PrAble for NonChanTypeName<'a> {
         }
     }
 }
-impl<'a> PrAble for NonChanType<'a> {
+impl PrAble for NonChanType {
     fn pr(&self) -> Pra {
         let NonChanType(kw, chan_dir, opt_template) = self;
         let opt_template = opt_template.as_ref().map_or(nil(), |(langle, params, rangle)| {
@@ -100,7 +100,7 @@ impl<'a> PrAble for NonChanType<'a> {
     }
 }
 
-impl<'a> PrAble for PhysicalInstType<'a> {
+impl PrAble for PhysicalInstType {
     fn pr(&self) -> Pra {
         match self {
             PhysicalInstType::ChanType(chan_type) => chan_type.pr(),
@@ -109,7 +109,7 @@ impl<'a> PrAble for PhysicalInstType<'a> {
     }
 }
 
-impl<'a> PrAble for ParamInstType<'a> {
+impl PrAble for ParamInstType {
     fn pr(&self) -> Pra {
         match self {
             ParamInstType::PInt(v) | ParamInstType::PBool(v) | ParamInstType::PReal(v) => v.pr(),
@@ -118,7 +118,7 @@ impl<'a> PrAble for ParamInstType<'a> {
     }
 }
 
-impl<'a> PrAble for InstType<'a> {
+impl PrAble for InstType {
     fn pr(&self) -> Pra {
         match self {
             InstType::Phys(v) => v.pr(),
@@ -127,7 +127,7 @@ impl<'a> PrAble for InstType<'a> {
     }
 }
 
-impl<'a> PrAble for FuncName<'a> {
+impl PrAble for FuncName {
     fn pr(&self) -> Pra {
         match self {
             FuncName::Ident(v) => v.pr(),
@@ -136,7 +136,7 @@ impl<'a> PrAble for FuncName<'a> {
     }
 }
 
-impl<'a> PrAble for ArrayedExprIds<'a> {
+impl PrAble for ArrayedExprIds {
     fn pr(&self) -> Pra {
         match self {
             ArrayedExprIds::ExprId(e) => e.pr(),
@@ -146,7 +146,7 @@ impl<'a> PrAble for ArrayedExprIds<'a> {
     }
 }
 
-impl<'a> PrAble for BaseId<'a> {
+impl PrAble for BaseId {
     fn pr(&self) -> Pra {
         let BaseId { ident, brackets } = self;
         concat((
@@ -155,14 +155,14 @@ impl<'a> PrAble for BaseId<'a> {
         ))
     }
 }
-impl<'a> PrAble for ExprId<'a> {
+impl PrAble for ExprId {
     fn pr(&self) -> Pra {
         let ExprId(ids) = self;
         concat_sep1(ids, nil())
     }
 }
 
-impl<'a> PrAble for ArrayedExprs<'a> {
+impl PrAble for ArrayedExprs {
     fn pr(&self) -> Pra {
         match self {
             ArrayedExprs::Expr(e) => e.pr(),
@@ -172,7 +172,7 @@ impl<'a> PrAble for ArrayedExprs<'a> {
     }
 }
 
-impl<'a> PrAble for ExprRange<'a> {
+impl PrAble for ExprRange {
     fn pr(&self) -> Pra {
         let (e1, opt_e2) = self;
         match opt_e2 {
@@ -182,7 +182,7 @@ impl<'a> PrAble for ExprRange<'a> {
     }
 }
 
-impl<'a> PrAble for Expr<'a> {
+impl PrAble for Expr {
     fn pr(&self) -> Pra {
         match self {
             Expr::Num(v) => v.pr(),
@@ -218,7 +218,7 @@ impl<'a> PrAble for Expr<'a> {
     }
 }
 
-impl<'a> PrAble for IdList<'a> {
+impl PrAble for IdList {
     fn pr(&self) -> Pra {
         let IdList(sep_list) = self;
         concat_map_sep1(sep_list, space(), |(id, brackets)| {
@@ -228,14 +228,14 @@ impl<'a> PrAble for IdList<'a> {
     }
 }
 
-impl<'a> PrAble for ParamInstance<'a> {
+impl PrAble for ParamInstance {
     fn pr(&self) -> Pra {
         let ParamInstance(param_inst_type, id_list) = self;
         concat((param_inst_type, space(), id_list))
     }
 }
 
-impl<'a> PrAble for OptTemplateSpec<'a> {
+impl PrAble for OptTemplateSpec {
     fn pr(&self) -> Pra {
         let OptTemplateSpec(kw_export, template) = self;
         let export = match kw_export {
@@ -253,7 +253,7 @@ impl<'a> PrAble for OptTemplateSpec<'a> {
     }
 }
 
-impl<'a> PrAble for PortFormalListItem<'a> {
+impl PrAble for PortFormalListItem {
     fn pr(&self) -> Pra {
         match self {
             PortFormalListItem::Phys(tp, ids) => concat((tp, space(), ids)),
@@ -262,7 +262,7 @@ impl<'a> PrAble for PortFormalListItem<'a> {
     }
 }
 
-impl<'a> PrAble for ParenedPortFormalList<'a> {
+impl PrAble for ParenedPortFormalList {
     fn pr(&self) -> Pra {
         let ParenedPortFormalList(lparen, items, rparen) = self;
         let params = match items {
@@ -273,7 +273,7 @@ impl<'a> PrAble for ParenedPortFormalList<'a> {
     }
 }
 
-impl<'a> PrAble for KwProclike<'a> {
+impl PrAble for KwProclike {
     fn pr(&self) -> Pra {
         match self {
             KwProclike::DefProc(v) | KwProclike::DefCell(v) | KwProclike::DefChan(v) | KwProclike::DefData(v) => v.pr(),
@@ -281,28 +281,28 @@ impl<'a> PrAble for KwProclike<'a> {
     }
 }
 
-impl<'a> PrAble for IdMap<'a> {
+impl PrAble for IdMap {
     fn pr(&self) -> Pra {
         let IdMap(id, arrow, id2) = self;
         concat((id, space(), arrow, space(), id2))
     }
 }
 
-impl<'a> PrAble for InterfaceSpecItem<'a> {
+impl PrAble for InterfaceSpecItem {
     fn pr(&self) -> Pra {
         let InterfaceSpecItem(tp, lbrace, items, rbrace) = self;
         let items = concat_sep1(items, space());
         concat((tp, lbrace, items.group().nest(/*TODO GIVE GENERIC NAME*/ 2), rbrace))
     }
 }
-impl<'a> PrAble for InterfaceSpec<'a> {
+impl PrAble for InterfaceSpec {
     fn pr(&self) -> Pra {
         let InterfaceSpec(items) = self;
         concat_sep1(items, space())
     }
 }
 
-impl<'a> PrAble for DefProclike<'a> {
+impl PrAble for DefProclike {
     fn pr(&self) -> Pra {
         let DefProclike(kw, name, derived_type, ports, spec, body) = self;
         let derived_type = derived_type
@@ -315,13 +315,13 @@ impl<'a> PrAble for DefProclike<'a> {
     }
 }
 
-impl<'a> PrAble for FuncBody<'a> {
+impl PrAble for FuncBody {
     fn pr(&self) -> Pra {
         let FuncBody(body) = self;
         body.pr()
     }
 }
-impl<'a> PrAble for FuncRetType<'a> {
+impl PrAble for FuncRetType {
     fn pr(&self) -> Pra {
         match self {
             FuncRetType::Phys(v) => v.pr(),
@@ -329,20 +329,20 @@ impl<'a> PrAble for FuncRetType<'a> {
         }
     }
 }
-impl<'a> PrAble for DefFunc<'a> {
+impl PrAble for DefFunc {
     fn pr(&self) -> Pra {
         let DefFunc(kw, name, ports, colon, ret_type, body) = self;
         concat((kw, space(), name, ports, colon, ret_type, body))
     }
 }
-impl<'a> PrAble for DefIFace<'a> {
+impl PrAble for DefIFace {
     fn pr(&self) -> Pra {
         let DefIFace(kw, name, ports, semi) = self;
         concat((kw, space(), name, ports, semi))
     }
 }
 
-impl<'a> PrAble for TempaltedDef<'a> {
+impl PrAble for TempaltedDef {
     fn pr(&self) -> Pra {
         match self {
             TempaltedDef::Proclike(v) => v.pr(),
@@ -351,7 +351,7 @@ impl<'a> PrAble for TempaltedDef<'a> {
         }
     }
 }
-impl<'a> PrAble for EnumBody<'a> {
+impl PrAble for EnumBody {
     fn pr(&self) -> Pra {
         match self {
             EnumBody::NoBody(semi) => semi.pr(),
@@ -361,7 +361,7 @@ impl<'a> PrAble for EnumBody<'a> {
         }
     }
 }
-impl<'a> DefEnum<'a> {
+impl DefEnum {
     fn prc(&self) -> PraChunk {
         let DefEnum(kw, id, body) = self;
         let p = concat((kw, space(), id, body));
@@ -369,21 +369,21 @@ impl<'a> DefEnum<'a> {
     }
 }
 
-impl<'a> PrAble for OverrideOneSpec<'a> {
+impl PrAble for OverrideOneSpec {
     fn pr(&self) -> Pra {
         let OverrideOneSpec(tp, names) = self;
         concat((tp, space(), concat_sep1(names, space())))
     }
 }
 
-impl<'a> PrAble for OverrideSpec<'a> {
+impl PrAble for OverrideSpec {
     fn pr(&self) -> Pra {
         let OverrideSpec(lbrace, items, rbrace) = self;
         concat((lbrace, concat_vec(items, space()), rbrace))
     }
 }
 
-impl<'a> PrAble for BracketedAttrList<'a> {
+impl PrAble for BracketedAttrList {
     fn pr(&self) -> Pra {
         let BracketedAttrList(lbrac, items, rbrac) = self;
         concat((
@@ -394,7 +394,7 @@ impl<'a> PrAble for BracketedAttrList<'a> {
     }
 }
 
-impl<'a> PrAble for PortConnSpec<'a> {
+impl PrAble for PortConnSpec {
     fn pr(&self) -> Pra {
         match self {
             PortConnSpec::Named(items) => concat_map_sep1(items, space(), |(dot, id, eq, exprs)| {
@@ -407,7 +407,7 @@ impl<'a> PrAble for PortConnSpec<'a> {
     }
 }
 
-impl<'a> PrAble for InstanceId<'a> {
+impl PrAble for InstanceId {
     fn pr(&self) -> Pra {
         let InstanceId(id, brackets, port_conn, attr_list, assigns) = self;
         let brackets = concat_map_vec(brackets, nil(), |(lbrac, e, rbrac)| concat((lbrac, e, rbrac)));
@@ -428,7 +428,7 @@ impl<'a> PrAble for InstanceId<'a> {
     }
 }
 
-impl<'a> Instance<'a> {
+impl Instance {
     fn prc(&self) -> PraChunk {
         let Instance(tp, ids, semi) = self;
         let p = concat((tp, space(), concat_sep1(ids, soft_line()).nest(4), semi));
@@ -436,7 +436,7 @@ impl<'a> Instance<'a> {
     }
 }
 
-impl<'a> Connection<'a> {
+impl Connection {
     fn prc(&self) -> PraChunk {
         let Connection(id, brackets, port_conn, attr_list, semi) = self;
         let brackets = concat_map_vec(brackets, nil(), |(lbrac, e, rbrac)| concat((lbrac, e, rbrac)));
@@ -455,7 +455,7 @@ impl<'a> Connection<'a> {
     }
 }
 
-impl<'a> Alias<'a> {
+impl Alias {
     fn prc(&self) -> PraChunk {
         let Alias(ids, eq, exprs, semi) = self;
         let p = concat((ids, space(), eq, space(), exprs, semi));
@@ -463,7 +463,7 @@ impl<'a> Alias<'a> {
     }
 }
 
-impl<'a> PrAble for GuardedClause<'a> {
+impl PrAble for GuardedClause {
     fn pr(&self) -> Pra {
         match self {
             GuardedClause::Expr(e, arrow, items) => {
@@ -513,20 +513,20 @@ fn format_base_conditional_like(
         concat((lbrac, concat_chunks(false, chunks, Some(rbrac), 0)))
     }
 }
-impl<'a> BaseDynamicLoop<'a> {
+impl BaseDynamicLoop {
     fn prc(&self) -> PraChunk {
         let BaseDynamicLoop(lbrac, items, rbrac) = self;
         format_base_conditional_like(lbrac.pr(), nil(), items, rbrac.pr()).chunk()
     }
 }
-impl<'a> Conditional<'a> {
+impl Conditional {
     fn prc(&self) -> PraChunk {
         let Conditional(lbrac, items, rbrac) = self;
         format_base_conditional_like(lbrac.pr(), space(), items, rbrac.pr()).chunk()
     }
 }
 
-impl<'a> BaseMacroLoop<'a> {
+impl BaseMacroLoop {
     fn prc(&self) -> PraChunk {
         let BaseMacroLoop(lparen, semi, id, colon1, range, colon2, items, rparen) = self;
         let items = items.iter().map(|v| v.prc()).collect_vec();
@@ -548,14 +548,14 @@ impl<'a> BaseMacroLoop<'a> {
     }
 }
 
-impl<'a> PrAble for ConnOp<'a> {
+impl PrAble for ConnOp {
     fn pr(&self) -> Pra {
         match self {
             ConnOp::Equal(v) | ConnOp::NotEqual(v) => v.pr(),
         }
     }
 }
-impl<'a> PrAble for AssertionPart<'a> {
+impl PrAble for AssertionPart {
     fn pr(&self) -> Pra {
         match self {
             AssertionPart::Expr(e, label) => {
@@ -573,13 +573,13 @@ impl<'a> PrAble for AssertionPart<'a> {
         }
     }
 }
-impl<'a> Assertion<'a> {
+impl Assertion {
     fn prc(&self) -> PraChunk {
         let Assertion(lbrace, assertion_part, rbrace, semi) = self;
         concat((lbrace, space(), assertion_part, space(), rbrace, semi)).chunk()
     }
 }
-impl<'a> PrAble for ExprOrStr<'a> {
+impl PrAble for ExprOrStr {
     fn pr(&self) -> Pra {
         match self {
             ExprOrStr::Expr(v) => v.pr(),
@@ -587,7 +587,7 @@ impl<'a> PrAble for ExprOrStr<'a> {
         }
     }
 }
-impl<'a> DebugOutput<'a> {
+impl DebugOutput {
     fn prc(&self) -> PraChunk {
         let DebugOutput(lbrace, exprs, rbrace, semi) = self;
         let exprs = concat_sep1(exprs, space());
@@ -595,7 +595,7 @@ impl<'a> DebugOutput<'a> {
     }
 }
 
-impl<'a> PrAble for SupplySpec<'a> {
+impl PrAble for SupplySpec {
     fn pr(&self) -> Pra {
         let SupplySpec(langle, id1, id2, ids34, rbrace) = self;
         concat((
@@ -609,19 +609,19 @@ impl<'a> PrAble for SupplySpec<'a> {
         ))
     }
 }
-impl<'a> PrAble for AssignStmt<'a> {
+impl PrAble for AssignStmt {
     fn pr(&self) -> Pra {
         let AssignStmt(lhs, eq, rhs) = self;
         group((lhs, space(), eq, soft_line(), rhs.pr().group().nest(4))).nest(4)
     }
 }
-impl<'a> PrAble for AssignBoolDirStmt<'a> {
+impl PrAble for AssignBoolDirStmt {
     fn pr(&self) -> Pra {
         let AssignBoolDirStmt(lhs, (_, dir)) = self;
         concat((lhs, dir))
     }
 }
-impl<'a> PrAble for RecvTypeCast<'a> {
+impl PrAble for RecvTypeCast {
     fn pr(&self) -> Pra {
         match self {
             RecvTypeCast::AsInt(kw, lparen, id, rparen) => concat((kw, lparen, id, rparen)),
@@ -630,7 +630,7 @@ impl<'a> PrAble for RecvTypeCast<'a> {
         }
     }
 }
-impl<'a> PrAble for SendStmt<'a> {
+impl PrAble for SendStmt {
     fn pr(&self) -> Pra {
         let SendStmt(chan, (_, ctrl1), e1, recv) = self;
         let recv = recv.as_ref().map_or(nil(), |((_, ctrl2), e2)| concat((ctrl2, e2)));
@@ -638,7 +638,7 @@ impl<'a> PrAble for SendStmt<'a> {
         concat((chan, ctrl1, e1, recv))
     }
 }
-impl<'a> PrAble for RecvStmt<'a> {
+impl PrAble for RecvStmt {
     fn pr(&self) -> Pra {
         let RecvStmt(chan, (_, ctrl1), e1, recv) = self;
         let recv = recv.as_ref().map_or(nil(), |((_, ctrl2), e2)| concat((ctrl2, e2)));
@@ -647,7 +647,7 @@ impl<'a> PrAble for RecvStmt<'a> {
     }
 }
 
-impl<'a> PrAble for GuardedCmd<'a> {
+impl PrAble for GuardedCmd {
     fn pr(&self) -> Pra {
         match self {
             GuardedCmd::Expr(e, arrow, items) => {
@@ -692,7 +692,7 @@ fn format_chp_conditional_like(lbrac: Pra, extra_space: Pra, items: &SepList1<Gu
         concat((lbrac, concat_chunks(false, chunks, Some(rbrac), 0)))
     }
 }
-impl<'a> PrAble for ChpBracketedStmt<'a> {
+impl PrAble for ChpBracketedStmt {
     fn pr(&self) -> Pra {
         match self {
             ChpBracketedStmt::DetermSelect(lbrac, items, rbrac) => {
@@ -721,7 +721,7 @@ impl<'a> PrAble for ChpBracketedStmt<'a> {
     }
 }
 
-impl<'a> PrAble for ChpMacroLoop<'a> {
+impl PrAble for ChpMacroLoop {
     fn pr(&self) -> Pra {
         let ChpMacroLoop(lparen, (_, ctrl), id, colon1, range, colon2, items, rparen) = self;
 
@@ -742,7 +742,7 @@ impl<'a> PrAble for ChpMacroLoop<'a> {
     }
 }
 
-impl<'a> PrAble for ChpStmt<'a> {
+impl PrAble for ChpStmt {
     fn pr(&self) -> Pra {
         match self {
             ChpStmt::Assign(v) => v.pr(),
@@ -772,7 +772,7 @@ impl<'a> PrAble for ChpStmt<'a> {
         }
     }
 }
-impl<'a> PrAble for ChpItem<'a> {
+impl PrAble for ChpItem {
     fn pr(&self) -> Pra {
         let ChpItem(label, stmt) = self;
         match label {
@@ -781,7 +781,7 @@ impl<'a> PrAble for ChpItem<'a> {
         }
     }
 }
-impl<'a> ChpItemList<'a> {
+impl ChpItemList {
     fn chunks(&self) -> Vec<PraChunk> {
         let ChpItemList(l) = self;
         // each item (with terminator) is its own chunk
@@ -799,7 +799,7 @@ impl<'a> ChpItemList<'a> {
     }
 }
 
-impl<'a> LangChp<'a> {
+impl LangChp {
     fn prc(&self) -> PraChunk {
         let LangChp(kw, supply_spec, lbrace, items, rbrace) = self;
         let supply_spec = supply_spec.as_ref().map_or(nil(), |spec| concat((space(), spec)));
@@ -814,7 +814,7 @@ impl<'a> LangChp<'a> {
     }
 }
 
-impl<'a> HseBodies<'a> {
+impl HseBodies {
     fn chunks(&self) -> Vec<PraChunk> {
         match self {
             HseBodies::Body(items) => items.0.chunks(),
@@ -826,7 +826,7 @@ impl<'a> HseBodies<'a> {
         }
     }
 }
-impl<'a> LangHse<'a> {
+impl LangHse {
     fn prc(&self) -> PraChunk {
         let LangHse(kw, supply_spec, lbrace, bodies, rbrace) = self;
         let supply_spec = supply_spec.as_ref().map_or(nil(), |spec| concat((space(), spec)));
@@ -841,7 +841,7 @@ impl<'a> LangHse<'a> {
     }
 }
 
-impl<'a> PrAble for PrsExpr<'a> {
+impl PrAble for PrsExpr {
     fn pr(&self) -> Pra {
         match self {
             PrsExpr::Ident(v) => v.pr(),
@@ -853,7 +853,7 @@ impl<'a> PrAble for PrsExpr<'a> {
     }
 }
 
-impl<'a> PrAble for TreeSubcktSpec<'a> {
+impl PrAble for TreeSubcktSpec {
     fn pr(&self) -> Pra {
         match self {
             TreeSubcktSpec::Expr(e) => e.pr(),
@@ -862,7 +862,7 @@ impl<'a> PrAble for TreeSubcktSpec<'a> {
     }
 }
 
-impl<'a> PrAble for SizeSpec<'a> {
+impl PrAble for SizeSpec {
     fn pr(&self) -> Pra {
         let SizeSpec(langle, e, opt, opt2, rangle) = self;
 
@@ -875,7 +875,7 @@ impl<'a> PrAble for SizeSpec<'a> {
     }
 }
 
-impl<'a> PrAble for PrsMacroLoop<'a> {
+impl PrAble for PrsMacroLoop {
     fn pr(&self) -> Pra {
         let PrsMacroLoop(lparen, id, colon1, range, colon2, items, rparen) = self;
 
@@ -885,7 +885,7 @@ impl<'a> PrAble for PrsMacroLoop<'a> {
     }
 }
 
-impl<'a> PrAble for PrsItem<'a> {
+impl PrAble for PrsItem {
     fn pr(&self) -> Pra {
         match self {
             PrsItem::Rule(lhs, (_, arrow), rhs, (_, dir)) => concat((lhs, space(), arrow, space(), rhs, dir)),
@@ -935,7 +935,7 @@ impl<'a> PrAble for PrsItem<'a> {
     }
 }
 
-impl<'a> PrsBodyRow<'a> {
+impl PrsBodyRow {
     fn prc(&self) -> PraChunk {
         let PrsBodyRow(attr_list, item) = self;
         let attr_list = attr_list.as_ref().map_or(nil(), |v| concat((v, space())));
@@ -943,14 +943,14 @@ impl<'a> PrsBodyRow<'a> {
     }
 }
 
-impl<'a> PrsBody<'a> {
+impl PrsBody {
     fn chunks(&self) -> Vec<PraChunk> {
         let PrsBody(body_rows) = self;
         body_rows.iter().map(|v| v.prc()).collect_vec()
     }
 }
 
-impl<'a> LangPrs<'a> {
+impl LangPrs {
     fn prc(&self) -> PraChunk {
         let LangPrs(kw, supply_spec, opt_star, lbrace, body, rbrace) = self;
         let supply_spec = supply_spec.as_ref().map_or(nil(), |spec| concat((space(), spec)));
@@ -960,7 +960,7 @@ impl<'a> LangPrs<'a> {
     }
 }
 
-impl<'a> PrAble for TimingBodyClause<'a> {
+impl PrAble for TimingBodyClause {
     fn pr(&self) -> Pra {
         let TimingBodyClause(e, star, ctrl) = self;
         let star = star.as_ref().map_or(nil(), |v| v.pr());
@@ -968,7 +968,7 @@ impl<'a> PrAble for TimingBodyClause<'a> {
         concat((e, star, ctrl))
     }
 }
-impl<'a> PrAble for TimingBody<'a> {
+impl PrAble for TimingBody {
     fn pr(&self) -> Pra {
         let TimingBody(tc1, opt_qmark, tc2, (_, tt), e, tc3) = self;
         let opt_qmark = opt_qmark.as_ref().map_or(nil(), |v| v.pr());
@@ -980,7 +980,7 @@ impl<'a> PrAble for TimingBody<'a> {
         concat((tc1, qmark_and_tc2, tt, e, tc3))
     }
 }
-impl<'a> SpecItem<'a> {
+impl SpecItem {
     fn prc(&self) -> PraChunk {
         match self {
             SpecItem::Normal(id, lparen, eids, rparen) => concat((
@@ -994,7 +994,7 @@ impl<'a> SpecItem<'a> {
         }
     }
 }
-impl<'a> PrAble for SpecBody<'a> {
+impl PrAble for SpecBody {
     fn pr(&self) -> Pra {
         let SpecBody {
             lbrace,
@@ -1022,14 +1022,14 @@ impl<'a> PrAble for SpecBody<'a> {
         concat((lbrace, concat_chunks(true, chunks, Some(rbrace.pr()), 2)))
     }
 }
-impl<'a> LangSpec<'a> {
+impl LangSpec {
     fn prc(&self) -> PraChunk {
         let LangSpec(kw, body) = self;
         concat((kw, space(), body)).chunk()
     }
 }
 
-impl<'a> LangRefine<'a> {
+impl LangRefine {
     fn prc(&self) -> PraChunk {
         let LangRefine(kw, lbrace, items, rbrace) = self;
         concat((
@@ -1041,7 +1041,7 @@ impl<'a> LangRefine<'a> {
     }
 }
 
-impl<'a> PrAble for DirectivePart<'a> {
+impl PrAble for DirectivePart {
     fn pr(&self) -> Pra {
         let DirectivePart((_, dir), e, o) = self;
         let o = o.as_ref().map_or(nil(), |(comma, (id, o))| {
@@ -1051,7 +1051,7 @@ impl<'a> PrAble for DirectivePart<'a> {
         concat((dir, space(), e, o))
     }
 }
-impl<'a> PrAble for SizeDirectiveMacroLoop<'a> {
+impl PrAble for SizeDirectiveMacroLoop {
     fn pr(&self) -> Pra {
         let SizeDirectiveMacroLoop(lparen, semi, id, colon1, range, colon2, items, rparen) = self;
         let chunks_then_close_paren = concat_chunks(true, zip_sep1_as_chunks(items, nil()), Some(rparen.pr()), 2);
@@ -1070,7 +1070,7 @@ impl<'a> PrAble for SizeDirectiveMacroLoop<'a> {
     }
 }
 
-impl<'a> PrAble for SizeDirective<'a> {
+impl PrAble for SizeDirective {
     fn pr(&self) -> Pra {
         match self {
             SizeDirective::Item(id, lbrace, dir_part, dir_part2, rbrace) => {
@@ -1082,7 +1082,7 @@ impl<'a> PrAble for SizeDirective<'a> {
     }
 }
 
-impl<'a> LangSizing<'a> {
+impl LangSizing {
     fn prc(&self) -> PraChunk {
         let LangSizing(kw, lbrace, items, sizes, rbrace) = self;
         let item = zip_map_sep1_as_chunks(items, nil(), |item| {
@@ -1100,14 +1100,14 @@ impl<'a> LangSizing<'a> {
     }
 }
 
-impl<'a> PrAble for ActionItem<'a> {
+impl PrAble for ActionItem {
     fn pr(&self) -> Pra {
         let ActionItem(id, lbrace, items, rbrace) = self;
         let chunks_and_rbrace = concat_chunks(true, items.0.chunks(), Some(rbrace.pr()), 2);
         concat((id, lbrace, chunks_and_rbrace))
     }
 }
-impl<'a> LangInitialize<'a> {
+impl LangInitialize {
     fn prc(&self) -> PraChunk {
         let LangInitialize(kw, lbrace, items, rbrace) = self;
         let chunks_and_rbrace = concat_chunks(true, zip_sep1_as_chunks(items, nil()), Some(rbrace.pr()), 2);
@@ -1115,7 +1115,7 @@ impl<'a> LangInitialize<'a> {
     }
 }
 
-impl<'a> DataflowOrdering<'a> {
+impl DataflowOrdering {
     fn prc(&self) -> PraChunk {
         let DataflowOrdering(id, lbrace, items, rbrace) = self;
         let items = zip_map_sep1_as_chunks(items, nil(), |(ids1, c, ids2)| {
@@ -1131,7 +1131,7 @@ impl<'a> DataflowOrdering<'a> {
         concat((id, lbrace, chunks_and_rbrace)).chunk()
     }
 }
-impl<'a> PrAble for ExprIdOrStar<'a> {
+impl PrAble for ExprIdOrStar {
     fn pr(&self) -> Pra {
         match self {
             ExprIdOrStar::ExprId(v) => v.pr(),
@@ -1139,7 +1139,7 @@ impl<'a> PrAble for ExprIdOrStar<'a> {
         }
     }
 }
-impl<'a> PrAble for ExprIdOrStarOrBar<'a> {
+impl PrAble for ExprIdOrStarOrBar {
     fn pr(&self) -> Pra {
         match self {
             ExprIdOrStarOrBar::ExprId(v) => v.pr(),
@@ -1148,7 +1148,7 @@ impl<'a> PrAble for ExprIdOrStarOrBar<'a> {
         }
     }
 }
-impl<'a> PrAble for DataflowItem<'a> {
+impl PrAble for DataflowItem {
     fn pr(&self) -> Pra {
         match self {
             DataflowItem::BracketedOrParenedFlow(e1, arrow, brac, id) => {
@@ -1178,7 +1178,7 @@ impl<'a> PrAble for DataflowItem<'a> {
         }
     }
 }
-impl<'a> LangDataflow<'a> {
+impl LangDataflow {
     fn prc(&self) -> PraChunk {
         let LangDataflow(kw, lbrace, ordering, items, rbrace) = self;
         let ordering = match ordering {
@@ -1191,7 +1191,7 @@ impl<'a> LangDataflow<'a> {
     }
 }
 
-impl<'a> BaseItem<'a> {
+impl BaseItem {
     fn prc(&self) -> PraChunk {
         match self {
             BaseItem::Instance(v) => v.prc(),
@@ -1214,14 +1214,14 @@ impl<'a> BaseItem<'a> {
     }
 }
 
-impl<'a> MethodsBody<'a> {
+impl MethodsBody {
     fn prc(&self) -> PraChunk {
         let MethodsBody(kw, lbrace, methods, rbrace) = self;
         concat((kw, lbrace, concat_vec(methods, hard_line()), rbrace)).chunk()
     }
 }
 
-impl<'a> PrAble for Method<'a> {
+impl PrAble for Method {
     fn pr(&self) -> Pra {
         match self {
             Method::Hse(id, lbrace, items, rbrace) => {
@@ -1239,7 +1239,7 @@ impl<'a> PrAble for Method<'a> {
     }
 }
 
-impl<'a> PrAble for ProclikeBody<'a> {
+impl PrAble for ProclikeBody {
     fn pr(&self) -> Pra {
         match self {
             ProclikeBody::NoBody(semi) => semi.pr(),
@@ -1260,7 +1260,7 @@ impl<'a> PrAble for ProclikeBody<'a> {
     }
 }
 
-impl<'a> NamespaceDecl<'a> {
+impl NamespaceDecl {
     fn prc(&self) -> PraChunk {
         let NamespaceDecl(opt_kw_export, kw_namespace, name, lbrace, items, rbrace) = self;
         let p = concat((
@@ -1278,7 +1278,7 @@ impl<'a> NamespaceDecl<'a> {
     }
 }
 
-impl<'a> PrAble for Import<'a> {
+impl PrAble for Import {
     fn pr(&self) -> Pra {
         match self {
             Import::String(s) => s.pr(),
@@ -1294,7 +1294,7 @@ impl<'a> PrAble for Import<'a> {
     }
 }
 
-impl<'a> TopItem<'a> {
+impl TopItem {
     fn prc(&self) -> PraChunk {
         match self {
             TopItem::Namespace(v) => v.prc(),
@@ -1319,7 +1319,7 @@ impl<'a> TopItem<'a> {
     }
 }
 
-impl<'a> TopItem<'a> {
+impl TopItem {
     fn pr_of_list(items: &Vec<Self>, require_initial_new_line: bool) -> Pra {
         let chunks = items.iter().map(|v| v.prc()).collect_vec();
         concat_chunks(require_initial_new_line, chunks, None, 0)
