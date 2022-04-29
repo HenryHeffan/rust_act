@@ -139,8 +139,11 @@ pub mod ast {
         Bool(Kw),
     }
 
+    #[derive(Debug)]
+    pub struct FuncTemplateParams(pub CtrlLAngBrace, pub SepList1<Expr, CtrlComma>, pub CtrlRAngBrace);
+
     // An expression node in the AST. Children are spanned so we can generate useful runtime errors.
-    #[derive(Debug, Clone)]
+    #[derive(Debug)]
     pub enum Expr {
         Num(Num),
         Ident(Ident),
@@ -164,7 +167,7 @@ pub mod ast {
         Query(Box<Self>, CtrlQMark, Box<Self>, CtrlColon, Box<Self>),
         Concat(CtrlLBrace, SepList1<Self, CtrlComma>, CtrlRBrace),
         Dot(Box<Self>, CtrlDot, Ident),
-        Call(FuncName, CtrlLParen, SepList1<Self, CtrlComma>, CtrlRParen),
+        Call(FuncName, Option<FuncTemplateParams>, CtrlLParen, SepList1<Self, CtrlComma>, CtrlRParen),
         Parened(CtrlLParen, Box<Self>, CtrlRParen),
     }
     pub type ArrayedExprs = Arrayed<Expr>;
@@ -492,15 +495,19 @@ where
             kw("bool").map(FuncName::Bool),
             ident.map(FuncName::Ident),
         ));
+        let template_params = ctrl('<').then_cut(expr_no_gt.list1_sep_by(ctrl(',')).term_by(ctrl('>'))).map(|(a, (b,c))| FuncTemplateParams(a,b,c));
         let func_call = func_name
+            .then_opt(template_params
+
+            )
             .then(ctrl('('))
             .then_cut((&expr).list1_sep_by(ctrl(',')).term_by(ctrl(')')))
-            .map(|((name, lparen), (args, rparen))| Expr::Call(name, lparen, args, rparen));
+            .map(|(((name, template_params), lparen), (args, rparen))| Expr::Call(name, template_params,lparen, args, rparen));
 
         let atom = alt((
             num.map(Expr::Num),
             // bitfield and func_call go before "local"
-            func_call,
+            uncut(func_call),
             ident.map(Expr::Ident), // TODO support qualified names?
             ctrl('(')
                 .then_cut(&expr)

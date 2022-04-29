@@ -163,6 +163,13 @@ impl PrAble for ExprRange {
     }
 }
 
+impl PrAble for FuncTemplateParams {
+    fn pr(&self) -> Pra {
+        let FuncTemplateParams(langle, items, rangle) = self;
+        concat((langle, concat_sep1(items, space()), rangle))
+    }
+}
+
 impl PrAble for Expr {
     fn pr(&self) -> Pra {
         match self {
@@ -233,7 +240,10 @@ impl PrAble for Expr {
                 rbrace,
             )),
             Expr::Dot(lhs, dot, id) => group((lhs.pr(), dot, id)),
-            Expr::Call(lhs, lparen, items, rparen) => group((lhs, lparen, concat_sep1(items, space()).nest(4), rparen)),
+            Expr::Call(lhs, template_params, lparen, items, rparen) => {
+                let template_params = template_params.as_ref().map_or(nil(), |v| v.pr());
+                group((lhs, template_params, lparen, concat_sep1(items, space()).nest(4), rparen))
+            },
             Expr::Parened(lparen, e, rparen) => group((lparen, concat((line_(), e.pr())).nest(2), line_(), rparen)),
         }
     }
