@@ -1,7 +1,7 @@
 use super::utils::*;
 use crate::parser::ast::*;
 use crate::token::Token;
-use crate::FlatToken;
+use crate::{FlatToken, WhitespaceKind};
 use itertools::Itertools;
 
 impl PrAble for Ctrl {
@@ -37,7 +37,7 @@ impl PrAble for StrTok {
 impl PrAble for QualifiedName {
     fn pr(&self) -> Pra {
         let QualifiedName(cc, items) = self;
-        let items = concat_sep1(items, space());
+        let items = concat_sep1(items, nil());
         match cc {
             Some(cc) => concat((cc.pr(), items)),
             None => items.pr(),
@@ -81,12 +81,10 @@ impl PrAble for TemplateArg {
 
 impl PrAble for NonChanTypeName {
     fn pr(&self) -> Pra {
+        use NonChanTypeName::*;
         match self {
-            NonChanTypeName::Int(v)
-            | NonChanTypeName::Ints(v)
-            | NonChanTypeName::Bool(v)
-            | NonChanTypeName::Enum(v) => v.pr(),
-            NonChanTypeName::QualifiedName(v) => v.pr(),
+            Int(v) | Ints(v) | Bool(v) | Enum(v) => v.pr(),
+            QualifiedName(v) => v.pr(),
         }
     }
 }
@@ -102,9 +100,10 @@ impl PrAble for NonChanType {
 
 impl PrAble for ParamInstType {
     fn pr(&self) -> Pra {
+        use ParamInstType::*;
         match self {
-            ParamInstType::PInt(v) | ParamInstType::PBool(v) | ParamInstType::PReal(v) => v.pr(),
-            ParamInstType::PType(kw, lparen, tp, rparen) => concat((kw.pr(), lparen.pr(), tp.pr(), rparen.pr())),
+            PInt(v) | PBool(v) | PReal(v) => v.pr(),
+            PType(kw, lparen, tp, rparen) => concat((kw.pr(), lparen.pr(), tp.pr(), rparen.pr())),
         }
     }
 }
@@ -245,11 +244,10 @@ impl PrAble for PortFormalListItem {
 impl PrAble for ParenedPortFormalList {
     fn pr(&self) -> Pra {
         let ParenedPortFormalList(lparen, items, rparen) = self;
-        let params = match items {
-            Some(items) => concat_sep1(items, space()),
-            None => nil(),
-        };
-        concat((lparen, params.group().nest(4), rparen))
+        match items {
+            Some(items) => group((lparen, line_(), concat_sep1(items, line()), line_(), rparen)).nest(4),
+            None => concat((lparen, rparen)),
+        }
     }
 }
 
@@ -279,21 +277,14 @@ impl PrAble for ProclikeDecl {
         let ProclikeDecl((_, kw), name, derived_type, ports, spec, ret_type) = self;
         let derived_type = derived_type
             .as_ref()
-            .map_or(nil(), |(ctrl, tp)| concat((space(), ctrl, space(), tp)));
+            .map_or(nil(), |(ctrl, tp)| concat((space(), ctrl, space(), tp, line())));
         let spec = spec
             .as_ref()
-            .map_or(nil(), |(ctrl, tp)| concat((space(), ctrl, space(), tp)));
+            .map_or(nil(), |(ctrl, tp)| concat((line(), ctrl, space(), tp)));
         let ret_type = ret_type
             .as_ref()
-            .map_or(nil(), |(colon, tp)| concat((space(), colon, space(), tp)));
-        concat((kw, space(), name, derived_type, ports, spec, ret_type))
-    }
-}
-
-impl PrAble for DefIFace {
-    fn pr(&self) -> Pra {
-        let DefIFace(kw, name, ports, semi) = self;
-        concat((kw, space(), name, ports, semi))
+            .map_or(nil(), |(colon, tp)| concat((line(), colon, space(), tp)));
+        concat((kw, space(), name, derived_type, ports, spec, space(), ret_type))
     }
 }
 
@@ -1198,16 +1189,11 @@ impl PrAble for ProclikeBody {
 impl NamespaceDecl {
     fn prc(&self) -> PraChunk {
         let NamespaceDecl(opt_kw_export, kw_namespace, name, lbrace, items, rbrace) = self;
+        let kw_export = opt_kw_export.map_or(nil(), |kw| concat((kw, space())));
+        let chunks = items.iter().map(|v| v.prc()).collect_vec();
         let p = concat((
-            opt_kw_export.map_or(nil(), |kw| concat((kw, space()))),
-            kw_namespace,
-            space(),
-            name,
-            line(),
-            lbrace,
-            concat((hard_line(), TopItem::pr_of_list(items, true))).group().nest(2),
-            hard_line(),
-            rbrace,
+            concat((kw_export, kw_namespace, space(), name, line())),
+            concat((lbrace, concat_chunks(true, chunks, Some(rbrace.pr()), 2))),
         ));
         p.chunk()
     }
@@ -1247,18 +1233,14 @@ impl TopItem {
     }
 }
 
-impl TopItem {
-    fn pr_of_list(items: &Vec<Self>, require_initial_new_line: bool) -> Pra {
-        let chunks = items.iter().map(|v| v.prc()).collect_vec();
-        concat_chunks(require_initial_new_line, chunks, None, 0)
-    }
-}
-
 pub fn print_pretty(
     ast: &Vec<TopItem>,
+    final_comments: Vec<(WhitespaceKind, &str)>,
     flat_tokens: &Vec<FlatToken>,
     tokens: &Vec<Token>,
     width: usize,
 ) -> Option<String> {
-    as_pretty(TopItem::pr_of_list(ast, false), flat_tokens, tokens, width)
+    let chunks = ast.iter().map(|v| v.prc()).collect_vec();
+    let chunks = concat_chunks(false, chunks, None, 0);
+    as_pretty(chunks, &final_comments, flat_tokens, tokens, width)
 }

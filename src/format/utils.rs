@@ -215,6 +215,21 @@ enum EvaledPra {
     DelimitedChunkConcat(bool, Vec<EvaledPraChunk>, Vec<Comment>, Option<Box<Self>>, usize),
 }
 
+fn eval_comments(comments: &Vec<(WhitespaceKind, &str)>) -> Vec<Comment> {
+    comments
+        .iter()
+        .map(|v| match v.0 {
+            WhitespaceKind::UntermBlockComment => panic!(),
+            WhitespaceKind::Space => (0..v.1.matches('\n').count()).map(|_| Comment::NewLine).collect_vec(),
+            WhitespaceKind::LineComment => {
+                vec![Comment::LineComment(v.1.to_string())]
+            }
+            WhitespaceKind::BlockComment => vec![Comment::BlockComment(v.1.to_string())],
+        })
+        .flatten()
+        .collect_vec()
+}
+
 impl Pra {
     // remove all the nulls, and copy tokens into strings
     fn decode<'a>(self, ft_start: FTStart, tokens: &'a Vec<Token<'a>>) -> Option<EvaledPra> {
@@ -255,22 +270,7 @@ impl Pra {
             Pra::Tok(ft_loc) => {
                 let tok = &tokens[ft_loc.idx(ft_start)];
                 let tok_text = tok.str_.to_string();
-
-                let comments = tok
-                    .leading_space
-                    .iter()
-                    .map(|v| match v.0 {
-                        WhitespaceKind::UntermBlockComment => panic!(),
-                        WhitespaceKind::Space => (0..v.1.matches('\n').count()).map(|_| Comment::NewLine).collect_vec(),
-                        WhitespaceKind::LineComment => {
-                            vec![Comment::LineComment(v.1.to_string())]
-                        }
-                        WhitespaceKind::BlockComment => vec![Comment::BlockComment(v.1.to_string())],
-                    })
-                    .flatten()
-                    .collect_vec();
-
-                Some(EvaledPra::Tok(comments, tok_text))
+                Some(EvaledPra::Tok(eval_comments(&tok.leading_space), tok_text))
             }
         }
     }
@@ -450,19 +450,37 @@ impl EvaledPra {
     }
 }
 
-pub fn as_pretty(ast: Pra, flat_tokens: &Vec<FlatToken>, tokens: &Vec<Token>, width: usize) -> Option<String> {
-    let allocator = BoxAllocator;
-    let mut mem = Vec::new();
+pub fn as_pretty(
+    ast: Pra,
+    final_comments: &Vec<(WhitespaceKind, &str)>,
+    flat_tokens: &Vec<FlatToken>,
+    tokens: &Vec<Token>,
+    width: usize,
+) -> Option<String> {
     assert!(matches!(ast, Pra::DelimitedChunkConcat(_, _, _, _)));
+
     let mut ast = ast.decode(FTStart::of_vec(&flat_tokens), tokens).unwrap();
     ast.shift_comments();
+    match &mut ast {
+        EvaledPra::DelimitedChunkConcat(_, _, comm, _, _) => {
+            assert_eq!(comm.len(), 0);
+            *comm = eval_comments(&final_comments);
+        }
+        _ => panic!("top level node must be a DelimitedChunkConcat"),
+    }
+
+    let allocator = BoxAllocator;
+    let mut mem = Vec::new();
     let result = ast
         .pretty::<_, ()>(&allocator)
         .1
         .render(width, &mut mem)
         .map(|()| {
             let res = str::from_utf8(&mem).unwrap_or("expected utf8 string");
-            res.to_string()
+            match res.chars().last().map(|c| c == '\n').unwrap_or(false) {
+                true => res.to_string(),
+                false => res.to_owned() + "\n",
+            }
         })
         .ok();
     result

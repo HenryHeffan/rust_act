@@ -44,18 +44,17 @@ pub mod ast {
     }
 
     #[derive(Debug)]
+    pub enum TemplateArg {
+        PhysType(CtrlAtSign, InstType),
+        ArrayedExprs(ArrayedExprs),
+    }
+
+    #[derive(Debug)]
     pub struct NonChanType(
         pub NonChanTypeName,
         pub Option<ChanDir>,
         pub Option<(CtrlLAngBrace, SepList1<TemplateArg, CtrlComma>, CtrlRAngBrace)>,
     );
-
-    #[derive(Debug)]
-    pub enum TemplateArg {
-        // UserType(UserType),
-        PhysType(CtrlAtSign, InstType),
-        ArrayedExprs(ArrayedExprs),
-    }
 
     #[derive(Debug)]
     pub enum InstType {
@@ -69,7 +68,7 @@ pub mod ast {
         PInt(Kw),
         PBool(Kw),
         PReal(Kw),
-        PType(Kw, CtrlLParen, Box<InstType>, CtrlRParen), // PType(UserType),
+        PType(Kw, CtrlLParen, Box<InstType>, CtrlRParen),
     }
 
     // Types for Connections, Instances, and Aliases
@@ -245,10 +244,9 @@ pub mod ast {
         pub Option<Kw>,
         pub Option<(Kw, CtrlLAngBrace, SepList1<ParamInstance, CtrlSemi>, CtrlRBrace)>,
     );
+
     #[derive(Debug)]
     pub struct DefEnum(pub Kw, pub Ident, pub EnumBody);
-    #[derive(Debug)]
-    pub struct DefIFace(pub Kw, pub Ident, pub ParenedPortFormalList, pub CtrlSemi);
 
     #[derive(Debug)]
     pub struct OverrideOneSpec(pub InstType, pub SepList1<Ident, CtrlComma>); // (UserType, Vec<Ident>);
