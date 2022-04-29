@@ -28,7 +28,7 @@ pub enum Pra {
     Group(Box<Self>),
     Nest(Box<Self>, usize),
     // This is e.g. a base_item or a chp_item, etc. It is a thing that can have extra new lines in front of it without strange behavior, and which should preserve double spaces if they exist
-    DelimitedChunkConcat(bool, Vec<PraChunk>, Option<Box<Self>>, usize),
+    DelimitedChunkConcat(Box<Self>, Vec<PraChunk>, Option<Box<Self>>, usize),
 }
 
 #[derive(Clone)]
@@ -39,6 +39,7 @@ pub trait PrAble {
 }
 
 impl<'a> PrAble for Pra {
+    #[inline]
     fn pr(&self) -> Pra {
         self.clone()
     }
@@ -48,6 +49,7 @@ impl<T: PrAble> PrAble for &T
 where
     T: PrAble,
 {
+    #[inline]
     fn pr(&self) -> Pra {
         let t: &T = self;
         t.pr()
@@ -55,38 +57,58 @@ where
 }
 
 impl Pra {
+    #[inline]
     pub fn from_tok(c: FTPtr) -> Pra {
         Pra::Tok(c)
     }
+
+    #[inline]
     pub fn group(self) -> Pra {
         Pra::Group(Box::new(self))
     }
+
+    #[inline]
     pub fn nest(self, indent: usize) -> Pra {
         Pra::Nest(Box::new(self), indent)
     }
+
+    #[inline]
     pub fn chunk(self) -> PraChunk {
         PraChunk(self)
     }
 }
 
+#[inline]
 pub fn nil() -> Pra {
     Pra::Nil
 }
+
+#[inline]
 pub fn space() -> Pra {
     Pra::S(PraSpaceKind::Space)
 }
+
+#[inline]
 pub fn line() -> Pra {
     Pra::S(PraSpaceKind::Line)
 }
+
+#[inline]
 pub fn soft_line() -> Pra {
     Pra::S(PraSpaceKind::SoftLine)
 }
+
+#[inline]
 pub fn hard_line() -> Pra {
     Pra::S(PraSpaceKind::HardLine)
 }
+
+#[inline]
 pub fn line_() -> Pra {
     Pra::S(PraSpaceKind::Line_)
 }
+
+#[inline]
 pub fn soft_line_() -> Pra {
     Pra::S(PraSpaceKind::SoftLine_)
 }
@@ -130,16 +152,20 @@ tuple_impls! { A B C D E F G H I J K L M N O P Q R }
 tuple_impls! { A B C D E F G H I J K L M N O P Q R S }
 tuple_impls! { A B C D E F G H I J K L M N O P Q R S T }
 
+#[inline]
 pub fn concat<T: PrAbleTuple>(t: T) -> Pra {
     t.pr_tup()
 }
+#[inline]
 pub fn group<T: PrAbleTuple>(t: T) -> Pra {
     concat(t).group()
 }
 
+#[inline]
 pub fn concat_map<O, F: Fn(&O) -> Pra>(l: &Vec<O>, f: F) -> Pra {
     Pra::Concat(l.into_iter().map(f).collect_vec())
 }
+#[inline]
 pub fn concat_interweave(items: Vec<Pra>, seps: Vec<Pra>, sep: Pra) -> Pra {
     let zipped = items.into_iter().zip_longest(seps.into_iter()).map(|x| match x {
         Both(x, y) => concat((x, y)),
@@ -149,12 +175,14 @@ pub fn concat_interweave(items: Vec<Pra>, seps: Vec<Pra>, sep: Pra) -> Pra {
     Pra::Concat(itertools::intersperse(zipped, sep).collect::<Vec<_>>())
 }
 
+#[inline]
 pub fn concat_sep1<O: PrAble, S: PrAble>(l: &SepList1<O, S>, sep: Pra) -> Pra {
     let items = l.items.iter().map(|v| v.pr()).collect_vec();
     let seps = l.seps.iter().map(|v| v.pr()).collect_vec();
     concat_interweave(items, seps, sep)
 }
 
+#[inline]
 pub fn zip_map2_sep1<O, S: PrAble, T, F: Fn(&O, Pra) -> T>(l: &SepList1<O, S>, term: Pra, f: F) -> Vec<T> {
     let seps = l.seps.iter().map(|v| v.pr()).collect_vec();
     l.items
@@ -163,6 +191,7 @@ pub fn zip_map2_sep1<O, S: PrAble, T, F: Fn(&O, Pra) -> T>(l: &SepList1<O, S>, t
         .map(|(item, sep)| f(item, sep))
         .collect_vec()
 }
+#[inline]
 pub fn zip_map_sep1<O, S: PrAble, F: Fn(&O) -> Pra>(l: &SepList1<O, S>, term: Pra, f: F) -> Vec<Pra> {
     let items = l.items.iter().map(|v| f(v)).collect_vec();
     let seps = l.seps.iter().map(|v| v.pr()).collect_vec();
@@ -172,25 +201,31 @@ pub fn zip_map_sep1<O, S: PrAble, F: Fn(&O) -> Pra>(l: &SepList1<O, S>, term: Pr
         .map(|(item, sep)| concat((item, sep)))
         .collect_vec()
 }
+#[inline]
 pub fn zip_map_sep1_as_chunks<O, S: PrAble, F: Fn(&O) -> Pra>(l: &SepList1<O, S>, term: Pra, f: F) -> Vec<PraChunk> {
     zip_map_sep1(l, term, f).into_iter().map(|v| v.chunk()).collect_vec()
 }
+#[inline]
 pub fn zip_sep1_as_chunks<O: PrAble, S: PrAble>(l: &SepList1<O, S>, term: Pra) -> Vec<PraChunk> {
     zip_map_sep1_as_chunks(l, term, |o| o.pr())
 }
 
+#[inline]
 pub fn concat_map_sep1<O, S: PrAble, F: Fn(&O) -> Pra>(l: &SepList1<O, S>, sep: Pra, f: F) -> Pra {
     let items = l.items.iter().map(|v| f(v).pr()).collect_vec();
     let seps = l.seps.iter().map(|v| v.pr()).collect_vec();
     concat_interweave(items, seps, sep)
 }
 
+#[inline]
 pub fn concat_vec<O: PrAble>(l: &Vec<O>, sep: Pra) -> Pra {
     Pra::Concat(itertools::intersperse(l.into_iter().map(|v| v.pr()), sep).collect::<Vec<_>>())
 }
-pub fn concat_chunks(require_initial_nl: bool, l: Vec<PraChunk>, rbrace: Option<Pra>, nest_amt: usize) -> Pra {
-    Pra::DelimitedChunkConcat(require_initial_nl, l, rbrace.map(Box::new), nest_amt)
+#[inline]
+pub fn concat_chunks(initial_nl: Pra, l: Vec<PraChunk>, rbrace: Option<Pra>, nest_amt: usize) -> Pra {
+    Pra::DelimitedChunkConcat(Box::new(initial_nl), l, rbrace.map(Box::new), nest_amt)
 }
+#[inline]
 pub fn concat_map_vec<O, F: Fn(&O) -> Pra>(l: &Vec<O>, sep: Pra, f: F) -> Pra {
     Pra::Concat(itertools::intersperse(l.into_iter().map(|v| f(v)), sep).collect::<Vec<_>>())
 }
@@ -205,6 +240,7 @@ enum Comment {
 
 #[derive(Clone, Debug)]
 struct EvaledPraChunk(Vec<Comment>, EvaledPra); // a thing that is meant to live on one line or one set of lines
+
 #[derive(Clone, Debug)]
 enum EvaledPra {
     S(PraSpaceKind),
@@ -212,7 +248,13 @@ enum EvaledPra {
     Concat(Vec<Self>),
     Group(Box<Self>),
     Nest(Box<Self>, usize),
-    DelimitedChunkConcat(bool, Vec<EvaledPraChunk>, Vec<Comment>, Option<Box<Self>>, usize),
+    DelimitedChunkConcat(
+        Box<Option<Self>>,
+        Vec<EvaledPraChunk>,
+        Vec<Comment>,
+        Option<Box<Self>>,
+        usize,
+    ),
 }
 
 fn eval_comments(comments: &Vec<(WhitespaceKind, &str)>) -> Vec<Comment> {
@@ -255,9 +297,9 @@ impl Pra {
                 .decode(ft_start, tokens)
                 .map(Box::new)
                 .map(|v| EvaledPra::Nest(v, amt)),
-            Pra::DelimitedChunkConcat(require_initial_nl, g, rparen, amt) => {
+            Pra::DelimitedChunkConcat(initial_nl, g, rparen, amt) => {
                 Some(EvaledPra::DelimitedChunkConcat(
-                    require_initial_nl,
+                    Box::new(initial_nl.decode(ft_start, tokens)),
                     g.into_iter()
                         // a chunk should never be empty, and so should never be converted to nil
                         .map(|PraChunk(g)| EvaledPraChunk(Vec::new(), g.decode(ft_start, tokens).unwrap()))
@@ -366,7 +408,7 @@ impl EvaledPra {
             }
             EvaledPra::Group(g) => g.pretty(allocator).group(),
             EvaledPra::Nest(g, amt) => g.pretty(allocator).nest(*amt as isize),
-            EvaledPra::DelimitedChunkConcat(first_require_initial_nl, items, final_comments, rparen, nest_amt) => {
+            EvaledPra::DelimitedChunkConcat(initial_nl, items, final_comments, rparen, nest_amt) => {
                 let strip_3nl = |comments: Vec<Comment>| {
                     comments.into_iter().fold(Vec::new(), |mut v, x| {
                         if v.len() <= 1 {
@@ -394,20 +436,8 @@ impl EvaledPra {
                     }
 
                     if is_first {
-                        if *first_require_initial_nl {
-                            while comments.len() > 1
-                                && matches!(comments[0], Comment::NewLine)
-                                && matches!(comments[1], Comment::NewLine)
-                            {
-                                comments.remove(0);
-                            }
-                            if comments.len() == 0 {
-                                comments.push(Comment::NewLine);
-                            }
-                        } else {
-                            while comments.len() > 0 && matches!(comments[0], Comment::NewLine) {
-                                comments.remove(0);
-                            }
+                        while comments.len() > 0 && matches!(comments[0], Comment::NewLine) {
+                            comments.remove(0);
                         }
                     }
 
@@ -423,6 +453,11 @@ impl EvaledPra {
                         Comment::NewLine => allocator.hardline(),
                         Comment::LineComment(s) | Comment::BlockComment(s) => allocator.text(s),
                     }));
+
+                    let comments = match (is_first, initial_nl.as_ref()) {
+                        (true, Some(initial_nl)) => initial_nl.pretty(allocator).append(comments),
+                        _ => comments,
+                    };
 
                     leading_space.append(comments).append(chunk.1.pretty(allocator))
                 }));
@@ -450,6 +485,14 @@ impl EvaledPra {
     }
 }
 
+fn post_process(s: &str) -> String {
+    s.trim_end()
+        .split('\n')
+        .into_iter()
+        .map(|line| line.trim_end().to_owned() + "\n")
+        .collect()
+}
+
 pub fn as_pretty(
     ast: Pra,
     final_comments: &Vec<(WhitespaceKind, &str)>,
@@ -471,17 +514,15 @@ pub fn as_pretty(
 
     let allocator = BoxAllocator;
     let mut mem = Vec::new();
+
+    // println!("{:#?}\n\n\n", ast
+    //     .pretty::<_, ()>(&allocator));
     let result = ast
         .pretty::<_, ()>(&allocator)
         .1
         .render(width, &mut mem)
-        .map(|()| {
-            let res = str::from_utf8(&mem).unwrap_or("expected utf8 string");
-            match res.chars().last().map(|c| c == '\n').unwrap_or(false) {
-                true => res.to_string(),
-                false => res.to_owned() + "\n",
-            }
-        })
+        .map(|()| post_process(str::from_utf8(&mem).unwrap_or("expected utf8 string")))
         .ok();
+
     result
 }

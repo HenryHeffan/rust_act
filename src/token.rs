@@ -4,7 +4,7 @@ use nom::{
     character::complete::{alpha1, alphanumeric1, char, digit1, hex_digit1, one_of},
     combinator::{all_consuming, map, recognize, rest},
     error::{context, ContextError, ParseError},
-    multi::{many0, many0_count},
+    multi::{many0, many0_count, many1},
     sequence::{delimited, pair, preceded},
     IResult,
 };
@@ -306,6 +306,9 @@ fn padded_token<'a, E: ParseError<&'a str> + ContextError<&'a str>>(i: &'a str) 
     }
 
     let int16 = map(recognize(preceded(tag("0x"), hex_digit1)), |v| (SimpleKind::Num, v));
+    let int2 = map(recognize(preceded(tag("0b"), many1(one_of("01")))), |v| {
+        (SimpleKind::Num, v)
+    });
     let int10 = map(recognize(digit1), |v| (SimpleKind::Num, v));
     let ctrl = map(recognize(one_of(CTRL_CHARS)), |v: &'a str| {
         assert!(v.len() == 1);
@@ -336,7 +339,7 @@ fn padded_token<'a, E: ParseError<&'a str> + ContextError<&'a str>>(i: &'a str) 
     map(
         pair(
             whitespace_or_comment,
-            alt((int16, int10, string, unterm_string, ctrl, ident, err_char)),
+            alt((int16, int2, int10, string, unterm_string, ctrl, ident, err_char)),
         ),
         |(leading_space, (kind, str_))| {
             let kind = match kind {

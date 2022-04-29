@@ -111,29 +111,28 @@ fn lex_and_print_errors(data: &str) -> (Vec<Token>, Vec<(WhitespaceKind, &str)>)
     (tokens, final_whitespace)
 }
 
-//
-// fn print_error_tree<'a>(tl: usize, i: i32, e: &'a ErrorTree<&'a [u8]>) -> (usize, &'a ErrorTree<&'a [u8]>) {
-//     let indent = (0..2 * i).map(|_| " ").collect::<String>();
-//     match e {
-//         ErrorTree::Alt(choices) => choices
-//             .iter()
-//             .map(|choice| print_error_tree(tl, i + 1, choice))
-//             .min_by_key(|v| v.0.clone())
-//             .unwrap(),
-//         ErrorTree::Base { location, kind } => {
-//             println!("{} {:?} {:?}", indent, tl - location.len(), kind);
-//             (location.len(), &e)
-//         }
-//         ErrorTree::Stack { base, contexts } => {
-//             println!(
-//                 "{} {:?}",
-//                 indent,
-//                 contexts.iter().map(|(l, c)| (tl - l.len(), c)).collect::<Vec<_>>()
-//             );
-//             print_error_tree(tl, i + 1, &base)
-//         }
-//     }
-// }
+fn print_error_tree<'a>(tl: usize, i: i32, e: &'a ErrorTree<&'a [u8]>) -> (usize, &'a ErrorTree<&'a [u8]>) {
+    let indent = (0..2 * i).map(|_| " ").collect::<String>();
+    match e {
+        ErrorTree::Alt(choices) => choices
+            .iter()
+            .map(|choice| print_error_tree(tl, i + 1, choice))
+            .min_by_key(|v| v.0.clone())
+            .unwrap(),
+        ErrorTree::Base { location, kind } => {
+            println!("{} {:?} {:?}", indent, tl - location.len(), kind);
+            (location.len(), &e)
+        }
+        ErrorTree::Stack { base, contexts } => {
+            println!(
+                "{} {:?}",
+                indent,
+                contexts.iter().map(|(l, c)| (tl - l.len(), c)).collect::<Vec<_>>()
+            );
+            print_error_tree(tl, i + 1, &base)
+        }
+    }
+}
 
 fn get_longest_error_idx<'a>(tl: usize, i: i32, e: &'a ErrorTree<&'a [u8]>) -> usize {
     match e {
@@ -147,7 +146,10 @@ fn get_longest_error_idx<'a>(tl: usize, i: i32, e: &'a ErrorTree<&'a [u8]>) -> u
     }
 }
 
-fn parse_and_print_errors(data: &str) -> (Vec<TopItem>, Vec<Token>, Vec<FlatToken>, Vec<(WhitespaceKind, &str)>) {
+fn parse_and_print_errors(
+    data: &str,
+    verbose: bool,
+) -> (Vec<TopItem>, Vec<Token>, Vec<FlatToken>, Vec<(WhitespaceKind, &str)>) {
     let (tokens, final_whitespace) = lex_and_print_errors(data);
 
     let flat_tokens = flatten_token_list(&tokens);
@@ -155,7 +157,9 @@ fn parse_and_print_errors(data: &str) -> (Vec<TopItem>, Vec<Token>, Vec<FlatToke
 
     let ast = match parsed {
         Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
-            // print_error_tree(flat_tokens.len(), 0, &e);
+            if verbose {
+                print_error_tree(flat_tokens.len(), 0, &e);
+            }
             // I think we should be able to tokenize any file, so this should never be used. However. Leave this code in just to be safe
             let i = get_longest_error_idx(flat_tokens.len(), 0, &e);
             let bad_token = &tokens[flat_tokens.len() - i];
@@ -181,7 +185,6 @@ fn parse_and_print_errors(data: &str) -> (Vec<TopItem>, Vec<Token>, Vec<FlatToke
     (ast, tokens, flat_tokens, final_whitespace)
 }
 
-
 // Note that the three-slash comments are actually used in the help output
 /// A tool to format Act code.
 #[derive(Parser, Debug)]
@@ -196,6 +199,10 @@ struct Cli {
     #[clap(short, long)]
     inplace: bool,
 
+    /// overwrite the file with the formatted code
+    #[clap(short, long)]
+    verbose: bool,
+
     // TODO move configuration into a separate file?
     /// maximum line width
     #[clap(short, long, default_value_t = 80)]
@@ -205,8 +212,14 @@ struct Cli {
 fn main() {
     let args: Cli = Cli::parse();
 
-    let src = fs::read_to_string(&args.path).expect("Failed to read file");
-    let (ast, tokens, flat_tokens, final_whitespace) = parse_and_print_errors(&src);
+    let src = fs::read_to_string(&args.path).unwrap_or_else(|_| {
+        println!(
+            "Failed to read file '{}'",
+            args.path.to_str().unwrap_or("<ERROR DECODING PATH>")
+        );
+        std::process::exit(1)
+    });
+    let (ast, tokens, flat_tokens, final_whitespace) = parse_and_print_errors(&src, args.verbose);
 
     let pretty_str = print_pretty(&ast, final_whitespace, &flat_tokens, &tokens, args.width)
         .unwrap_or("Failed to pretty-print ast".to_string());

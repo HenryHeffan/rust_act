@@ -109,18 +109,7 @@ pub mod ast {
     pub enum GuardedClause {
         Expr(Expr, CtrlLArrow, Vec<BaseItem>),
         Else(Kw, CtrlLArrow, Vec<BaseItem>),
-        MacroLoop(
-            CtrlLParen,
-            Ctrl, // []
-            Ident,
-            CtrlColon,
-            ExprRange,
-            CtrlColon,
-            Expr,
-            CtrlLArrow,
-            Vec<BaseItem>,
-            CtrlRParen,
-        ),
+        MacroLoop(MacroLoop<Ctrl /* [] */, (Expr, CtrlLArrow, Vec<BaseItem>)>),
     }
 
     #[derive(Debug)]
@@ -159,16 +148,7 @@ pub mod ast {
     );
 
     #[derive(Debug)]
-    pub struct BaseMacroLoop(
-        pub CtrlLParen,
-        pub Option<CtrlSemi>,
-        pub Ident,
-        pub CtrlColon,
-        pub ExprRange,
-        pub CtrlColon,
-        pub Vec<BaseItem>,
-        pub CtrlRParen,
-    );
+    pub struct BaseMacroLoop(pub MacroLoop<Option<CtrlSemi>, Vec<BaseItem>>);
 
     #[derive(Debug)]
     pub enum BaseItem {
@@ -614,7 +594,9 @@ where
                 ctrl2('-', '>'),
                 base_item.many1().term_by(ctrl(')')),
             )))
-            .map(|((a, b), (c, d, e, f, g, h, (i, j)))| GuardedClause::MacroLoop(a, b, c, d, e, f, g, h, i, j))
+            .map(|((a, b), (c, d, e, f, g, h, (i, j)))| {
+                GuardedClause::MacroLoop(MacroLoop(a, b, c, d, e, f, (g, h, i), j))
+            })
             .context("branch generator macro");
 
         let else_branch = kw("else")
@@ -649,7 +631,8 @@ pub fn base_item(i: &[u8]) -> IResult<&[u8], BaseItem, ET> {
             ctrl(':'),
             base_item.many1().term_by(ctrl(')')),
         )))
-        .map(|(a, (b, c, d, e, f, (g, h)))| BaseMacroLoop(a, b, c, d, e, f, g, h))
+        .map(|(a, (b, c, d, e, f, (g, h)))| MacroLoop(a, b, c, d, e, f, g, h))
+        .map(BaseMacroLoop)
         .context("macro loop");
 
     let dynamic_loop_gc = guarded_clause(ctrl2('[', ']'), ctrl(']'));

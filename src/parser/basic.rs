@@ -148,7 +148,7 @@ pub mod ast {
         Unary(UnaryOp, Ctrl, Box<Self>),
         Binary(BinaryOp, Ctrl, Box<Self>, Box<Self>),
         BitField(
-            Ident,
+            Box<Self>,
             CtrlLBrace,
             Box<Self>,
             Option<(CtrlDotDot, Box<Self>)>,
@@ -205,9 +205,20 @@ pub mod ast {
         pub Option<(CtrlVBar, ExprId, CtrlComma, ExprId)>,
         pub CtrlRAngBrace,
     );
+
+    #[derive(Debug)]
+    pub struct MacroLoop<C, T>(
+        pub CtrlLParen,
+        pub C,
+        pub Ident,
+        pub CtrlColon,
+        pub ExprRange,
+        pub CtrlColon,
+        pub T,
+        pub CtrlRParen,
+    );
 }
 use ast::*;
-// supply_spec: "<" expr_id [ "," expr_id ] [ "|" expr_id "," expr_id ] ">"
 
 #[inline]
 pub fn num<'a>(i: &'a [Tok]) -> IResult<&'a [Tok], Num, ET> {
@@ -341,20 +352,7 @@ pub fn ctrl(c: char) -> CtrlC {
 }
 
 #[inline]
-pub fn ctrl_dot_not_dotdot() -> CtrlC {
-    const PADDING: u8 = 0;
-    const DUMMY: [u8; 3] = [PADDING, PADDING, PADDING];
-    const LABEL: &'static str = ".";
-    CtrlC {
-        v: CtrlN::DotNotDotDot,
-        spaced: &DUMMY,
-        unspaced: &DUMMY,
-        label: LABEL,
-    }
-}
-
-#[inline]
-pub fn ctrl2(c1: char, c2: char) -> CtrlC {
+pub fn ctrl2_helper(c1: char, c2: char, ctrl1_not_ctrl2: bool) -> CtrlC {
     macro_rules! make_case {
         ($c1:expr, $c2:expr) => {{
             const PADDING: u8 = 0;
@@ -370,7 +368,11 @@ pub fn ctrl2(c1: char, c2: char) -> CtrlC {
             ];
     const LABEL: &'static str = stringify!($c1 $c2);
             CtrlC {
-                v: CtrlN::Char2,
+                v: if ctrl1_not_ctrl2 {
+                    CtrlN::Char1NotChar2
+                } else {
+                    CtrlN::Char2
+                },
                 spaced: &SPACED,
                 unspaced: &UNSPACED,
                 label: LABEL,
@@ -407,6 +409,16 @@ pub fn ctrl2(c1: char, c2: char) -> CtrlC {
         ('?', '-') => make_case!('?', '-'),
         c => panic!("no such parser implemented {:?}", c),
     }
+}
+
+#[inline]
+pub fn ctrl1_not_ctrl2(c1: char, c2: char) -> CtrlC {
+    ctrl2_helper(c1, c2, true)
+}
+
+#[inline]
+pub fn ctrl2(c1: char, c2: char) -> CtrlC {
+    ctrl2_helper(c1, c2, false)
 }
 
 #[inline]
@@ -475,15 +487,6 @@ where
             .then_cut((&expr).list1_sep_by(ctrl(',')).term_by(ctrl('}')))
             .map(|(a, (b, c))| Expr::Concat(a, b, c));
 
-        let bitfield = ident
-            .then(ctrl('{'))
-            .then_cut(
-                (&expr)
-                    .then_opt(peek(ctrl('.')).ignore_then_cut(ctrl2('.', '.').then((&expr).map(Box::new))))
-                    .then(ctrl('}')),
-            )
-            .map(|((a, b), ((c, d), e))| Expr::BitField(a, b, Box::new(c), d, e));
-
         let func_name = alt((
             kw("int").map(FuncName::Int),
             kw("bool").map(FuncName::Bool),
@@ -497,7 +500,6 @@ where
         let atom = alt((
             num.map(Expr::Num),
             // bitfield and func_call go before "local"
-            bitfield,
             func_call,
             ident.map(Expr::Ident), // TODO support qualified names?
             ctrl('(')
@@ -516,14 +518,14 @@ where
             Dot(CtrlDot, Ident),
         }
 
-        let arr_access = ctrl('[')
+        let arr_access = ctrl1_not_ctrl2('[', ']')
             .then_cut(
                 (&expr)
                     .then_opt(peek(ctrl('.')).ignore_then_cut(ctrl2('.', '.').then((&expr).map(Box::new))))
                     .then(ctrl(']')),
             )
             .map(|(a, ((b, c), d))| AccessKind::Arr(a, b, c, d));
-        let dot_access = ctrl_dot_not_dotdot()
+        let dot_access = ctrl1_not_ctrl2('.', '.')
             .then_cut(ident)
             .map(|(a, b)| AccessKind::Dot(a, b));
 
@@ -532,13 +534,26 @@ where
                 arr_access
                     .or(dot_access)
                     .many0()
-                    .term_by_peek_not_alt2(ctrl('['), ctrl_dot_not_dotdot()),
+                    .term_by_peek_not_alt2(ctrl1_not_ctrl2('[', ']'), ctrl1_not_ctrl2('.', '.')),
             )
             .map(|(lhs, accs)| {
                 accs.into_iter().fold(lhs, |lhs, access| match access {
                     AccessKind::Arr(a, b, c, d) => Expr::ArrAccess(Box::new(lhs), a, Box::new(b), c, d),
                     AccessKind::Dot(a, b) => Expr::Dot(Box::new(lhs), a, b),
                 })
+            });
+
+        let bitfield = access
+            .then_opt(
+                ctrl('{').then_cut(
+                    (&expr)
+                        .then_opt(peek(ctrl('.')).ignore_then_cut(ctrl2('.', '.').then((&expr).map(Box::new))))
+                        .then(ctrl('}')),
+                ),
+            )
+            .map(|(a, o)| match o {
+                None => a,
+                Some((b, ((c, d), e))) => Expr::BitField(Box::new(a), b, Box::new(c), d, e),
             });
 
         // Unary operators have precidence 2
@@ -549,7 +564,7 @@ where
 
         // This is an ok use of the nom version of "many0", because all of the things being parsed are 1 token long
         nom::multi::many0(op)
-            .then(access)
+            .then(bitfield)
             .map(|(ops, a)| ops.iter().rev().fold(a, |e, (op, c)| Expr::Unary(*op, *c, Box::new(e))))
             .parse(i)
     }
@@ -852,23 +867,26 @@ pub fn base_id(i: &[u8]) -> IResult<&[u8], BaseId, ET> {
 
 pub fn expr_id(i: &[u8]) -> IResult<&[u8], ExprId, ET> {
     base_id
-        .list1_sep_by(ctrl_dot_not_dotdot())
+        .list1_sep_by(ctrl1_not_ctrl2('.', '.'))
         .p()
         .map(ExprId)
         .context("expr id")
         .parse(i)
 }
 
-pub fn supply_spec(i: &[u8]) -> IResult<&[u8], SupplySpec, ET> {
-    expr_id
-        .then_opt(ctrl(',').then_cut(expr_id))
-        .then_opt(
-            ctrl('|')
-                .then_cut(expr_id.then(ctrl(',')).then(expr_id))
-                .map(|(a, ((b, c), d))| (a, b, c, d)),
+// supply_spec: "<" expr_id [ "," expr_id ] [ "|" expr_id "," expr_id ] ">"
+pub fn opt_supply_spec(i: &[u8]) -> IResult<&[u8], Option<SupplySpec>, ET> {
+    let supply_spec = ctrl('<')
+        .then_cut(
+            expr_id
+                .then_opt(ctrl(',').then_cut(expr_id))
+                .then_opt(
+                    ctrl('|')
+                        .then_cut(expr_id.then(ctrl(',')).then(expr_id))
+                        .map(|(a, ((b, c), d))| (a, b, c, d)),
+                )
+                .then_cut(ctrl('>')),
         )
-        .ang_braced()
-        .map(|(a, ((b, c), d), e)| SupplySpec(a, b, c, d, e))
-        .context("supply spec")
-        .parse(i)
+        .map(|(a, (((b, c), d), e))| SupplySpec(a, b, c, d, e));
+    supply_spec.opt().context("supply spec").parse(i)
 }

@@ -214,7 +214,7 @@ pub enum CtrlN {
     Char1,
     Char2,
     Char3,
-    DotNotDotDot,
+    Char1NotChar2,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -228,7 +228,6 @@ pub struct CtrlC {
 impl<'a> Parser<&'a [u8], Ctrl, ET<'a>> for CtrlC {
     #[inline]
     fn parse(&mut self, input: &'a [u8]) -> IResult<&'a [u8], Ctrl, ET<'a>> {
-        use crate::{token::Unspaced, TokenKind};
         match self.v {
             CtrlN::Char1 => tag(&self.spaced[0..1])
                 .or(tag(&self.unspaced[0..1]))
@@ -245,19 +244,11 @@ impl<'a> Parser<&'a [u8], Ctrl, ET<'a>> for CtrlC {
                 .map(|vs: &[u8]| Ctrl::Ctrl3(FTPtr::of_ptr(&vs[0]), FTPtr::of_ptr(&vs[1]), FTPtr::of_ptr(&vs[2])))
                 .context(self.label)
                 .parse(input),
-            CtrlN::DotNotDotDot => {
-                const D: u8 = TokenKind::from_ctrl('.', Unspaced::Yes) as u8;
-                const S_D: u8 = TokenKind::from_ctrl('.', Unspaced::No) as u8;
-                const S_DOT_DOT: [u8; 2] = [S_D, D];
-                const DOT_DOT: [u8; 2] = [D, D];
-                const S_DOT: [u8; 1] = [S_D];
-                const DOT: [u8; 1] = [D];
-                peek(not(tag(&S_DOT_DOT[0..2]).or(tag(&DOT_DOT[0..2]))))
-                    .ignore_then(tag(&S_DOT[0..1]).or(tag(&DOT[0..1])))
-                    .map(|vs: &[u8]| Ctrl::Ctrl(FTPtr::of_ptr(&vs[0])))
-                    .context(self.label)
-                    .parse(input)
-            }
+            CtrlN::Char1NotChar2 => peek(not(tag(&self.spaced[0..2]).or(tag(&self.unspaced[0..2]))))
+                .ignore_then(tag(&self.spaced[0..1]).or(tag(&self.unspaced[0..1])))
+                .map(|vs: &[u8]| Ctrl::Ctrl(FTPtr::of_ptr(&vs[0])))
+                .context(self.label)
+                .parse(input),
         }
     }
 }

@@ -41,18 +41,6 @@ mod lang_chp_hse {
         pub struct AssignBoolDirStmt(pub ExprId, pub (Dir, Ctrl));
 
         #[derive(Debug)]
-        pub struct ChpMacroLoop(
-            pub CtrlLParen,
-            pub (SemiOrComma, Ctrl),
-            pub Ident,
-            pub CtrlColon,
-            pub ExprRange,
-            pub CtrlColon,
-            pub ChpItemList,
-            pub CtrlRParen,
-        );
-
-        #[derive(Debug)]
         pub enum ChpStmt {
             Assign(AssignStmt),
             AssignBoolDir(AssignBoolDirStmt),
@@ -70,7 +58,7 @@ mod lang_chp_hse {
                 CtrlRParen,
             ),
             BracketedStmt(ChpBracketedStmt),
-            MacroLoop(ChpMacroLoop),
+            MacroLoop(MacroLoop<(SemiOrComma, Ctrl), ChpItemList>),
         }
 
         #[derive(Debug, Copy, Clone)]
@@ -232,7 +220,7 @@ mod lang_chp_hse {
                     .then(chp_item_list1().term_by(ctrl(')'))),
             )
             .context("macro_loop")
-            .map(|((a, b), ((((c, d), e), f), (g, h)))| ChpMacroLoop(a, b, c, d, e, f, ChpItemList(g), h))
+            .map(|((a, b), ((((c, d), e), f), (g, h)))| MacroLoop(a, b, c, d, e, f, ChpItemList(g), h))
             .map(ChpStmt::MacroLoop);
 
         let parened_body = ctrl('(')
@@ -449,7 +437,7 @@ mod lang_chp_hse {
     // Instead, HSE should be parsed like chp, and then checked afterwords that it is in the correct subset of chp
     pub fn lang_hse(i: &[u8]) -> IResult<&[u8], LangHse, ET> {
         kw("hse")
-            .then_opt(supply_spec)
+            .then(opt_supply_spec)
             .then(hse_bodies.opt().braced())
             .map(|((a, b), (c, d, e))| LangHse(a, b, c, d, e))
             .context("hse block")
@@ -457,7 +445,7 @@ mod lang_chp_hse {
     }
 
     pub fn lang_chp(i: &[u8]) -> IResult<&[u8], LangChp, ET> {
-        let block = supply_spec.opt().then(chp_item_list1().opt().braced());
+        let block = opt_supply_spec.then(chp_item_list1().opt().braced());
         kw("chp")
             .then_cut(block)
             .map(|(a, (b, (c, d, e)))| LangChp(a, b, c, d.map(ChpItemList), e))
@@ -496,17 +484,6 @@ mod lang_prs {
         }
 
         #[derive(Debug)]
-        pub struct PrsMacroLoop(
-            pub CtrlLParen,
-            pub Ident,
-            pub CtrlColon,
-            pub ExprRange,
-            pub CtrlColon,
-            pub PrsBody,
-            pub CtrlRParen,
-        );
-
-        #[derive(Debug)]
         pub enum PassNPKind {
             N,
             P,
@@ -522,7 +499,7 @@ mod lang_prs {
                 PrsBody,
                 CtrlRBrace,
             ),
-            MacroRule(PrsMacroLoop),
+            MacroLoop(MacroLoop<(), PrsBody>),
             Pass(
                 (PassNPKind, Kw),
                 SizeSpec,
@@ -667,8 +644,8 @@ mod lang_prs {
                 prs_body_row().many1().term_by(ctrl(')')).map(|(a, b)| (PrsBody(a), b)),
             )))
             .context("prs macro loop")
-            .map(|(a, (b, c, d, e, (f, g)))| PrsMacroLoop(a, b, c, d, e, f, g))
-            .map(PrsItem::MacroRule);
+            .map(|(a, (b, c, d, e, (f, g)))| MacroLoop(a, (), b, c, d, e, f, g))
+            .map(PrsItem::MacroLoop);
 
         let rule = prs_expr
             .then(arrow_kind)
@@ -720,7 +697,7 @@ mod lang_prs {
     // lang_prs: "prs" [ supply_spec ] [ "*" ] "{" [ prs_body ] "}"
     pub fn lang_prs(i: &[u8]) -> IResult<&[u8], LangPrs, ET> {
         kw("prs")
-            .then_opt(supply_spec)
+            .then(opt_supply_spec)
             .then_opt(ctrl('*'))
             .then(prs_body_row().many0().braced().map(|(x, y, z)| (x, PrsBody(y), z)))
             .map(|(((a, b), c), (d, e, f))| LangPrs(a, b, c, d, e, f))
@@ -1083,17 +1060,6 @@ mod lang_sizing {
         );
 
         #[derive(Debug)]
-        pub struct SizeDirectiveMacroLoop(
-            pub CtrlLParen,
-            pub CtrlSemi,
-            pub Ident,
-            pub CtrlColon,
-            pub ExprRange,
-            pub CtrlColon,
-            pub SepList1<SizingItem, CtrlSemi>,
-            pub CtrlRParen,
-        );
-        #[derive(Debug)]
         pub enum SizingItem {
             Setup(Ident, CtrlLArrow, Expr),
             Directive(
@@ -1103,7 +1069,7 @@ mod lang_sizing {
                 Option<(CtrlSemi, DirectivePart)>,
                 CtrlRBrace,
             ),
-            DirectiveMacroLoop(SizeDirectiveMacroLoop),
+            DirectiveMacroLoop(MacroLoop<CtrlSemi, SepList1<SizingItem, CtrlSemi>>),
         }
         #[derive(Debug)]
         pub struct LangSizing(
@@ -1144,7 +1110,7 @@ mod lang_sizing {
                 ctrl(':').then(expr_range).then(ctrl(':')),
                 sizing_item.list1_sep_by(ctrl(';')).term_by(ctrl(')')),
             )))
-            .map(|(a, (b, c, ((d, e), f), (g, h)))| SizeDirectiveMacroLoop(a, b, c, d, e, f, g, h))
+            .map(|(a, (b, c, ((d, e), f), (g, h)))| MacroLoop(a, b, c, d, e, f, g, h))
             .map(SizingItem::DirectiveMacroLoop)
             .context("macro loop");
         alt((setup_item, directive_item, directive_macro_loop)).parse(i)

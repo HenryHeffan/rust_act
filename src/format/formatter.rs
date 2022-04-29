@@ -169,32 +169,72 @@ impl PrAble for Expr {
             Expr::Num(v) => v.pr(),
             Expr::Ident(v) => v.pr(),
             Expr::Unary(_, op, expr) => group((op, expr.pr())),
-            Expr::Binary(_, op, e1, e2) => group((e1.pr(), space(), op, line(), e2.pr())),
+            // TODO should cut this into "layers" each of which is its own group
+            Expr::Binary(my_op_kind, _, _, _) => {
+                // expand out a whole sequence of binary ops using the same operator and put them into one group
+                // TODO one group per order of operator precedence?
+                let mut es = Vec::new();
+                let mut e_left = self;
+                loop {
+                    match e_left {
+                        Expr::Binary(op_kind, op, e1, e2) => {
+                            if *op_kind != *my_op_kind {
+                                break;
+                            }
+                            es.push((op, e2));
+                            e_left = e1.as_ref();
+                        }
+                        _ => break,
+                    }
+                }
+                let mut r = Vec::new();
+                r.push(e_left.pr());
+                for (op, e2) in es.into_iter().rev() {
+                    r.push(space());
+                    r.push(op.pr());
+                    r.push(line());
+                    r.push(e2.pr());
+                }
+                // println!("ending: {:?}", my_op_kind);
+                // println!("{}", r.len());
+                Pra::Concat(r).group()
+            }
+            Expr::Query(_, _, _, _, _) => {
+                // expand out a whole sequence of queries and put them into one group
+                let mut r = Vec::new();
+                let mut e_right = self;
+                loop {
+                    match e_right {
+                        Expr::Query(sel, qmark, o1, colon, o2) => {
+                            r.push(group((sel.pr(), space(), qmark)));
+                            r.push(line());
+                            r.push(group((o1.pr(), space(), colon)));
+                            r.push(line());
+                            e_right = o2.as_ref();
+                        }
+                        _ => break,
+                    }
+                }
+                r.push(e_right.pr().group());
+                Pra::Concat(r).group()
+            }
             Expr::BitField(id, lbrace, e_hi, dotdot_e_low, rbrace) => match dotdot_e_low {
-                Some((dotdot, e_low)) => group((id, lbrace, e_hi.pr(), dotdot, e_low.pr(), rbrace)),
-                None => group((id, lbrace, e_hi.pr(), rbrace)),
+                Some((dotdot, e_low)) => group((id.pr(), lbrace, e_hi.pr(), dotdot, e_low.pr(), rbrace)),
+                None => group((id.pr(), lbrace, e_hi.pr(), rbrace)),
             },
             Expr::ArrAccess(id, lbrace, e_hi, dotdot_e_low, rbrace) => match dotdot_e_low {
                 Some((dotdot, e_low)) => group((id.pr(), lbrace, e_hi.pr(), dotdot, e_low.pr(), rbrace)),
                 None => group((id.pr(), lbrace, e_hi.pr(), rbrace)),
             },
-            Expr::Query(sel, qmark, o1, colon, o2) => group((
-                sel.pr(),
-                space(),
-                qmark,
-                line(),
-                o1.pr(),
-                space(),
-                colon,
-                line(),
-                o2.pr(),
+            Expr::Concat(lbrace, items, rbrace) => group((
+                lbrace,
+                concat((line_(), concat_sep1(items, line()))).nest(2),
+                line_(),
+                rbrace,
             )),
-            Expr::Concat(lbrace, items, rbrace) => group((lbrace, concat_sep1(items, space()), rbrace)),
             Expr::Dot(lhs, dot, id) => group((lhs.pr(), dot, id)),
-            Expr::Call(lhs, lparen, items, rparen) => {
-                group((lhs, lparen, concat_sep1(items, space()).group().nest(4), rparen))
-            }
-            Expr::Parened(lparen, e, rparen) => group((lparen, e.pr(), rparen)).group(),
+            Expr::Call(lhs, lparen, items, rparen) => group((lhs, lparen, concat_sep1(items, space()).nest(4), rparen)),
+            Expr::Parened(lparen, e, rparen) => group((lparen, concat((line_(), e.pr())).nest(2), line_(), rparen)),
         }
     }
 }
@@ -220,17 +260,17 @@ impl PrAble for OptTemplateSpec {
     fn pr(&self) -> Pra {
         let OptTemplateSpec(kw_export, template) = self;
         let export = match kw_export {
-            Some(kw_export) => kw_export.pr(),
+            Some(kw_export) => concat((kw_export.pr(), space())),
             None => nil(),
         };
         let template = match template {
             Some((kw_template, lbrace, params, rbrace)) => {
                 let params = concat_sep1(params, space());
-                concat((kw_template, lbrace, params.group().nest(4), rbrace))
+                concat((kw_template, lbrace, params.group().nest(4), rbrace, space()))
             }
             None => nil(),
         };
-        concat((export, space(), template))
+        concat((export, template))
     }
 }
 
@@ -277,14 +317,14 @@ impl PrAble for ProclikeDecl {
         let ProclikeDecl((_, kw), name, derived_type, ports, spec, ret_type) = self;
         let derived_type = derived_type
             .as_ref()
-            .map_or(nil(), |(ctrl, tp)| concat((space(), ctrl, space(), tp, line())));
+            .map_or(nil(), |(ctrl, tp)| concat((space(), ctrl, space(), tp, soft_line())));
         let spec = spec
             .as_ref()
-            .map_or(nil(), |(ctrl, tp)| concat((line(), ctrl, space(), tp)));
+            .map_or(nil(), |(ctrl, tp)| concat((soft_line(), ctrl, space(), tp)));
         let ret_type = ret_type
             .as_ref()
-            .map_or(nil(), |(colon, tp)| concat((line(), colon, space(), tp)));
-        concat((kw, space(), name, derived_type, ports, spec, space(), ret_type))
+            .map_or(nil(), |(colon, tp)| concat((soft_line(), colon, space(), tp)));
+        group((kw, space(), name, derived_type, ports, spec, ret_type))
     }
 }
 
@@ -398,15 +438,15 @@ impl PrAble for GuardedClause {
     fn pr(&self) -> Pra {
         match self {
             GuardedClause::Expr(e, arrow, items) => {
-                let items = concat_chunks(true, items.iter().map(|v| v.prc()).collect(), None, 6);
+                let items = concat_chunks(hard_line(), items.iter().map(|v| v.prc()).collect(), None, 6);
                 concat((e, space(), arrow, space(), items))
             }
             GuardedClause::Else(kw, arrow, items) => {
-                let items = concat_chunks(true, items.iter().map(|v| v.prc()).collect(), None, 6);
+                let items = concat_chunks(hard_line(), items.iter().map(|v| v.prc()).collect(), None, 6);
                 concat((kw, space(), arrow, space(), items))
             }
-            GuardedClause::MacroLoop(lparen, ctrl, id, colon1, range, colon2, e, arrow, items, rparen) => {
-                let items = concat_chunks(true, items.iter().map(|v| v.prc()).collect(), None, 6);
+            GuardedClause::MacroLoop(MacroLoop(lparen, ctrl, id, colon1, range, colon2, (e, arrow, items), rparen)) => {
+                let items = concat_chunks(hard_line(), items.iter().map(|v| v.prc()).collect(), None, 6);
                 let prefix = concat((
                     lparen,
                     ctrl,
@@ -441,7 +481,7 @@ fn format_base_conditional_like(
             .map(|(sep, clause)| concat((sep, space(), clause)).chunk())
             .collect_vec();
 
-        concat((lbrac, concat_chunks(false, chunks, Some(rbrac), 0)))
+        concat((lbrac, concat_chunks(line(), chunks, Some(rbrac), 0)))
     }
 }
 impl BaseDynamicLoop {
@@ -459,10 +499,10 @@ impl Conditional {
 
 impl BaseMacroLoop {
     fn prc(&self) -> PraChunk {
-        let BaseMacroLoop(lparen, semi, id, colon1, range, colon2, items, rparen) = self;
+        let BaseMacroLoop(MacroLoop(lparen, semi, id, colon1, range, colon2, items, rparen)) = self;
         let items = items.iter().map(|v| v.prc()).collect_vec();
         let semi = semi.map_or(nil(), |v| v.pr());
-        let chunks_then_close_paren = concat_chunks(true, items, Some(rparen.pr()), 4);
+        let chunks_then_close_paren = concat_chunks(line(), items, Some(rparen.pr()), 4);
         concat((
             lparen,
             semi,
@@ -543,7 +583,7 @@ impl PrAble for SupplySpec {
 impl PrAble for AssignStmt {
     fn pr(&self) -> Pra {
         let AssignStmt(lhs, eq, rhs) = self;
-        group((lhs, space(), eq, soft_line(), rhs.pr().group().nest(4))).nest(4)
+        group((lhs, space(), eq, soft_line(), rhs.pr())).nest(4)
     }
 }
 impl PrAble for AssignBoolDirStmt {
@@ -582,15 +622,18 @@ impl PrAble for GuardedCmd {
     fn pr(&self) -> Pra {
         match self {
             GuardedCmd::Expr(e, arrow, items) => {
-                let items = concat_chunks(true, items.chunks(), None, 6);
-                concat((e, space(), arrow, space(), items))
+                let chunks = items.chunks();
+                let items = concat_chunks(line(), chunks, None, 2);
+
+                group((e.pr().nest(3), space(), arrow, space(), items))
             }
             GuardedCmd::Else(kw, arrow, items) => {
-                let items = concat_chunks(true, items.chunks(), None, 6);
-                concat((kw, space(), arrow, space(), items))
+                let chunks = items.chunks();
+                let items = concat_chunks(line(), chunks, None, 2);
+                group((kw, space(), arrow, space(), items))
             }
             GuardedCmd::Macro(lparen, ctrl, id, colon1, range, colon2, e, arrow, items, rparen) => {
-                let items = concat_chunks(true, items.chunks(), None, 6);
+                let items = concat_chunks(line(), items.chunks(), None, 2);
                 let prefix = concat((
                     lparen,
                     ctrl,
@@ -603,7 +646,7 @@ impl PrAble for GuardedCmd {
                     space(),
                     colon2,
                 ));
-                concat((prefix, space(), e, space(), arrow, items, space(), rparen))
+                group((prefix, space(), e, space(), arrow, items, space(), rparen))
             }
         }
     }
@@ -612,7 +655,7 @@ impl PrAble for GuardedCmd {
 fn format_chp_conditional_like(lbrac: Pra, extra_space: Pra, items: &SepList1<GuardedCmd, Ctrl>, rbrac: Pra) -> Pra {
     if items.items.len() == 1 {
         assert_eq!(items.seps.len(), 0);
-        concat((lbrac, space(), &items.items[0], space(), rbrac))
+        group((lbrac, space(), &items.items[0], line(), rbrac))
     } else {
         let seps = vec![extra_space].into_iter().chain(items.seps.iter().map(|v| v.pr()));
         let chunks = seps
@@ -620,7 +663,7 @@ fn format_chp_conditional_like(lbrac: Pra, extra_space: Pra, items: &SepList1<Gu
             .map(|(sep, clause)| concat((sep, space(), clause)).chunk())
             .collect_vec();
 
-        concat((lbrac, concat_chunks(false, chunks, Some(rbrac), 0)))
+        group((lbrac, concat_chunks(nil(), chunks, Some(rbrac), 0)))
     }
 }
 impl PrAble for ChpBracketedStmt {
@@ -642,34 +685,13 @@ impl PrAble for ChpBracketedStmt {
                     .map_or(nil(), |(arrow, guard)| concat((hard_line(), arrow, space(), guard)));
                 concat((
                     lbrac,
-                    concat_chunks(true, items.chunks(), None, 6),
+                    concat_chunks(line(), items.chunks(), None, 6),
                     guard,
                     hard_line(),
                     rbrac,
                 ))
             }
         }
-    }
-}
-
-impl PrAble for ChpMacroLoop {
-    fn pr(&self) -> Pra {
-        let ChpMacroLoop(lparen, (_, ctrl), id, colon1, range, colon2, items, rparen) = self;
-
-        let items = concat_chunks(true, items.chunks(), None, 6);
-        let prefix = concat((
-            lparen,
-            ctrl,
-            space(),
-            id,
-            space(),
-            colon1,
-            space(),
-            range,
-            space(),
-            colon2,
-        ));
-        concat((prefix, space(), items, space(), rparen))
     }
 }
 
@@ -682,12 +704,12 @@ impl PrAble for ChpStmt {
             ChpStmt::RecvStmt(v) => v.pr(),
             ChpStmt::Skip(v) => v.pr(),
             ChpStmt::ParenedBody(lparen, items, rparen) => {
-                concat((lparen, concat_chunks(true, items.chunks(), Some(rparen.pr()), 4)))
+                concat((lparen, concat_chunks(line(), items.chunks(), Some(rparen.pr()), 4)))
             }
             ChpStmt::FuncCall(name, lparen, args, rparen) => concat((
                 name,
                 lparen,
-                concat((concat_sep1(args, line()), line())).group().nest(4),
+                concat((concat_sep1(args, line()), line_())).group().nest(4),
                 rparen,
             )),
             ChpStmt::DottedCall(base, dot, id, lparen, args, rparen) => concat((
@@ -695,11 +717,26 @@ impl PrAble for ChpStmt {
                 dot,
                 id,
                 lparen,
-                concat((concat_sep1(args, line()), line())).group().nest(4),
+                concat((concat_sep1(args, line()), line_())).group().nest(4),
                 rparen,
             )),
             ChpStmt::BracketedStmt(p) => p.pr(),
-            ChpStmt::MacroLoop(p) => p.pr(),
+            ChpStmt::MacroLoop(MacroLoop(lparen, (_, ctrl), id, colon1, range, colon2, items, rparen)) => {
+                let items = concat_chunks(line(), items.chunks(), None, 6);
+                let prefix = concat((
+                    lparen,
+                    ctrl,
+                    space(),
+                    id,
+                    space(),
+                    colon1,
+                    space(),
+                    range,
+                    space(),
+                    colon2,
+                ));
+                concat((prefix, space(), items, space(), rparen))
+            }
         }
     }
 }
@@ -737,7 +774,7 @@ impl LangChp {
 
         match items {
             Some(items) => {
-                let items_and_rbrace = concat_chunks(true, items.chunks(), Some(rbrace.pr()), 2);
+                let items_and_rbrace = concat_chunks(line(), items.chunks(), Some(rbrace.pr()), 2);
                 concat((kw, supply_spec, space(), lbrace, items_and_rbrace)).chunk()
             }
             None => concat((kw, supply_spec, space(), lbrace, rbrace)).chunk(),
@@ -751,7 +788,7 @@ impl HseBodies {
             HseBodies::Body(items) => items.0.chunks(),
             HseBodies::Labeled(labeled) => zip_map2_sep1(labeled, nil(), |labeled_body, semi| {
                 let LabeledHseBody(id, colon, items, colon2, id2) = labeled_body;
-                let items_and_term = concat_chunks(true, items.0.chunks(), Some(concat((colon2, id2, semi))), 2);
+                let items_and_term = concat_chunks(line(), items.0.chunks(), Some(concat((colon2, id2, semi))), 2);
                 concat((id, colon, items_and_term)).chunk()
             }),
         }
@@ -764,7 +801,7 @@ impl LangHse {
 
         match bodies {
             Some(bodies) => {
-                let items_and_rbrace = concat_chunks(true, bodies.chunks(), Some(rbrace.pr()), 2);
+                let items_and_rbrace = concat_chunks(line(), bodies.chunks(), Some(rbrace.pr()), 2);
                 concat((kw, supply_spec, space(), lbrace, items_and_rbrace)).chunk()
             }
             None => concat((kw, supply_spec, space(), lbrace, rbrace)).chunk(),
@@ -810,16 +847,6 @@ impl PrAble for SizeSpec {
     }
 }
 
-impl PrAble for PrsMacroLoop {
-    fn pr(&self) -> Pra {
-        let PrsMacroLoop(lparen, id, colon1, range, colon2, items, rparen) = self;
-
-        let items = concat_chunks(true, items.chunks(), None, 4);
-        let prefix = concat((lparen, space(), id, space(), colon1, space(), range, space(), colon2));
-        concat((prefix, space(), items, space(), rparen))
-    }
-}
-
 impl PrAble for PrsItem {
     fn pr(&self) -> Pra {
         match self {
@@ -831,10 +858,14 @@ impl PrAble for PrsItem {
                 let spec = spec
                     .as_ref()
                     .map_or(nil(), |(langle, spec, rangle)| concat((langle, spec, rangle)));
-                let body_with_rbrace = concat_chunks(true, body.chunks(), Some(rbrace.pr()), 2);
+                let body_with_rbrace = concat_chunks(line(), body.chunks(), Some(rbrace.pr()), 2);
                 concat((id, spec, space(), lbrace, body_with_rbrace))
             }
-            PrsItem::MacroRule(v) => v.pr(),
+            PrsItem::MacroLoop(MacroLoop(lparen, (), id, colon1, range, colon2, items, rparen)) => {
+                let items = concat_chunks(line(), items.chunks(), None, 4);
+                let prefix = concat((lparen, space(), id, space(), colon1, space(), range, space(), colon2));
+                concat((prefix, space(), items, space(), rparen))
+            }
             PrsItem::Pass((_, kw), size_spec, lparen, id1, comma1, id2, comma2, id3, rparen) => concat((
                 kw,
                 space(),
@@ -890,7 +921,7 @@ impl LangPrs {
         let LangPrs(kw, supply_spec, opt_star, lbrace, body, rbrace) = self;
         let supply_spec = supply_spec.as_ref().map_or(nil(), |spec| concat((space(), spec)));
         let opt_star = opt_star.as_ref().map_or(nil(), |star| concat((space(), star)));
-        let body_and_rbrace = concat_chunks(true, body.chunks(), Some(rbrace.pr()), 2);
+        let body_and_rbrace = concat_chunks(line(), body.chunks(), Some(rbrace.pr()), 2);
         concat((kw, supply_spec, opt_star, space(), lbrace, body_and_rbrace)).chunk()
     }
 }
@@ -945,8 +976,12 @@ impl PrAble for SpecBody {
             match c {
                 None => {}
                 Some((kw, (lbrace, items, rbrace))) => {
-                    let items_and_rbrace =
-                        concat_chunks(true, items.iter().map(|v| v.prc()).collect_vec(), Some(rbrace.pr()), 2);
+                    let items_and_rbrace = concat_chunks(
+                        line(),
+                        items.iter().map(|v| v.prc()).collect_vec(),
+                        Some(rbrace.pr()),
+                        2,
+                    );
                     chunks.push(concat((kw, space(), lbrace, items_and_rbrace)).chunk());
                 }
             }
@@ -954,7 +989,7 @@ impl PrAble for SpecBody {
 
         generic_clause.iter().for_each(|v| chunks.push(v.prc()));
 
-        concat((lbrace, concat_chunks(true, chunks, Some(rbrace.pr()), 2)))
+        concat((lbrace, concat_chunks(line(), chunks, Some(rbrace.pr()), 2)))
     }
 }
 impl LangSpec {
@@ -970,7 +1005,12 @@ impl LangRefine {
         concat((
             kw,
             lbrace,
-            concat_chunks(true, items.iter().map(|v| v.prc()).collect_vec(), Some(rbrace.pr()), 2),
+            concat_chunks(
+                line(),
+                items.iter().map(|v| v.prc()).collect_vec(),
+                Some(rbrace.pr()),
+                2,
+            ),
         ))
         .chunk()
     }
@@ -986,24 +1026,6 @@ impl PrAble for DirectivePart {
         concat((dir, space(), e, o))
     }
 }
-impl PrAble for SizeDirectiveMacroLoop {
-    fn pr(&self) -> Pra {
-        let SizeDirectiveMacroLoop(lparen, semi, id, colon1, range, colon2, items, rparen) = self;
-        let chunks_then_close_paren = concat_chunks(true, zip_sep1_as_chunks(items, nil()), Some(rparen.pr()), 2);
-        concat((
-            lparen,
-            semi,
-            space(),
-            id,
-            space(),
-            colon1,
-            space(),
-            range,
-            colon2,
-            chunks_then_close_paren,
-        ))
-    }
-}
 
 impl PrAble for SizingItem {
     fn pr(&self) -> Pra {
@@ -1013,7 +1035,22 @@ impl PrAble for SizingItem {
                 let dir_part2 = dir_part2.as_ref().map_or(nil(), |(semi, v)| concat((semi, space(), v)));
                 concat((id, lbrace, dir_part, dir_part2, rbrace))
             }
-            SizingItem::DirectiveMacroLoop(v) => v.pr(),
+            SizingItem::DirectiveMacroLoop(MacroLoop(lparen, semi, id, colon1, range, colon2, items, rparen)) => {
+                let chunks_then_close_paren =
+                    concat_chunks(line(), zip_sep1_as_chunks(items, nil()), Some(rparen.pr()), 2);
+                concat((
+                    lparen,
+                    semi,
+                    space(),
+                    id,
+                    space(),
+                    colon1,
+                    space(),
+                    range,
+                    colon2,
+                    chunks_then_close_paren,
+                ))
+            }
         }
     }
 }
@@ -1021,7 +1058,7 @@ impl PrAble for SizingItem {
 impl LangSizing {
     fn prc(&self) -> PraChunk {
         let LangSizing(kw, lbrace, items, rbrace) = self;
-        let chunks_and_rbrace = concat_chunks(true, zip_sep1_as_chunks(items, nil()), Some(rbrace.pr()), 2);
+        let chunks_and_rbrace = concat_chunks(line(), zip_sep1_as_chunks(items, nil()), Some(rbrace.pr()), 2);
         concat((kw, lbrace, chunks_and_rbrace)).chunk()
     }
 }
@@ -1029,14 +1066,14 @@ impl LangSizing {
 impl PrAble for ActionItem {
     fn pr(&self) -> Pra {
         let ActionItem(id, lbrace, items, rbrace) = self;
-        let chunks_and_rbrace = concat_chunks(true, items.0.chunks(), Some(rbrace.pr()), 2);
+        let chunks_and_rbrace = concat_chunks(line(), items.0.chunks(), Some(rbrace.pr()), 2);
         concat((id, lbrace, chunks_and_rbrace))
     }
 }
 impl LangInitialize {
     fn prc(&self) -> PraChunk {
         let LangInitialize(kw, lbrace, items, rbrace) = self;
-        let chunks_and_rbrace = concat_chunks(true, zip_sep1_as_chunks(items, nil()), Some(rbrace.pr()), 2);
+        let chunks_and_rbrace = concat_chunks(line(), zip_sep1_as_chunks(items, nil()), Some(rbrace.pr()), 2);
         concat((kw, lbrace, chunks_and_rbrace)).chunk()
     }
 }
@@ -1053,7 +1090,7 @@ impl DataflowOrdering {
                 concat_sep1(ids2, space()),
             ))
         });
-        let chunks_and_rbrace = concat_chunks(true, items, Some(rbrace.pr()), 2);
+        let chunks_and_rbrace = concat_chunks(line(), items, Some(rbrace.pr()), 2);
         concat((id, lbrace, chunks_and_rbrace)).chunk()
     }
 }
@@ -1098,7 +1135,7 @@ impl PrAble for DataflowItem {
             DataflowItem::Cluster(kw, lbrace, items, rbrace) => concat((
                 kw,
                 lbrace,
-                concat_chunks(true, zip_sep1_as_chunks(items, nil()), Some(rbrace.pr()), 2),
+                concat_chunks(line(), zip_sep1_as_chunks(items, nil()), Some(rbrace.pr()), 2),
             )),
             DataflowItem::Sink(id, arrow, star) => concat((id, space(), arrow, space(), star)),
         }
@@ -1113,7 +1150,7 @@ impl LangDataflow {
         };
         let items = zip_sep1_as_chunks(items, nil());
         let chunks = ordering.into_iter().chain(items.into_iter()).collect_vec();
-        concat((kw, lbrace, concat_chunks(true, chunks, Some(rbrace.pr()), 2))).chunk()
+        concat((kw, lbrace, concat_chunks(line(), chunks, Some(rbrace.pr()), 2))).chunk()
     }
 }
 
@@ -1150,13 +1187,15 @@ impl MethodsBody {
 impl PrAble for Method {
     fn pr(&self) -> Pra {
         match self {
-            Method::Hse(id, lbrace, items, rbrace) => {
-                concat((id, lbrace, concat_chunks(true, items.0.chunks(), Some(rbrace.pr()), 2)))
-            }
+            Method::Hse(id, lbrace, items, rbrace) => concat((
+                id,
+                lbrace,
+                concat_chunks(line(), items.0.chunks(), Some(rbrace.pr()), 2),
+            )),
             Method::Assign(id, eq, e, semi) => concat((id, space(), eq, space(), e, semi)),
             Method::Macro(kw, id, ports, lbrace, items, rbrace) => {
                 let body = match items {
-                    Some(items) => concat((lbrace, concat_chunks(true, items.0.chunks(), Some(rbrace.pr()), 2))),
+                    Some(items) => concat((lbrace, concat_chunks(line(), items.0.chunks(), Some(rbrace.pr()), 2))),
                     None => concat((lbrace, rbrace)),
                 };
                 concat((kw, space(), id, ports, body))
@@ -1177,9 +1216,10 @@ impl PrAble for ProclikeBody {
                 }
 
                 concat((
+                    space(),
                     overrides.as_ref().map_or(nil(), |v| v.pr()),
                     lbrace,
-                    concat_chunks(true, items, Some(rbrace.pr()), 2),
+                    concat_chunks(line(), items, Some(rbrace.pr()), 2),
                 ))
             }
         }
@@ -1193,7 +1233,7 @@ impl NamespaceDecl {
         let chunks = items.iter().map(|v| v.prc()).collect_vec();
         let p = concat((
             concat((kw_export, kw_namespace, space(), name, line())),
-            concat((lbrace, concat_chunks(true, chunks, Some(rbrace.pr()), 2))),
+            concat((lbrace, concat_chunks(line(), chunks, Some(rbrace.pr()), 2))),
         ));
         p.chunk()
     }
@@ -1224,7 +1264,7 @@ impl TopItem {
                 let rename = rename.map_or(nil(), |(arrow, id)| concat((space(), arrow, space(), id)));
                 concat((kw_opt, space(), name, rename, semi)).chunk()
             }
-            TopItem::DefTemplated(spec, def, body) => concat((spec, line(), def, body)).chunk(),
+            TopItem::DefTemplated(spec, def, body) => concat((spec, def, body)).chunk(),
             TopItem::DefEnum(v) => v.prc(),
             TopItem::Alias(v) => v.prc(),
             TopItem::Connection(v) => v.prc(),
@@ -1241,6 +1281,6 @@ pub fn print_pretty(
     width: usize,
 ) -> Option<String> {
     let chunks = ast.iter().map(|v| v.prc()).collect_vec();
-    let chunks = concat_chunks(false, chunks, None, 0);
+    let chunks = concat_chunks(line(), chunks, None, 0);
     as_pretty(chunks, &final_comments, flat_tokens, tokens, width)
 }
