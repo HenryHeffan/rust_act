@@ -100,15 +100,6 @@ impl PrAble for NonChanType {
     }
 }
 
-impl PrAble for PhysicalInstType {
-    fn pr(&self) -> Pra {
-        match self {
-            PhysicalInstType::ChanType(chan_type) => chan_type.pr(),
-            PhysicalInstType::NonChanType(non_chan_type) => non_chan_type.pr(),
-        }
-    }
-}
-
 impl PrAble for ParamInstType {
     fn pr(&self) -> Pra {
         match self {
@@ -121,7 +112,8 @@ impl PrAble for ParamInstType {
 impl PrAble for InstType {
     fn pr(&self) -> Pra {
         match self {
-            InstType::Phys(v) => v.pr(),
+            InstType::ChanType(chan_type) => chan_type.pr(),
+            InstType::NonChanType(non_chan_type) => non_chan_type.pr(),
             InstType::Param(v) => v.pr(),
         }
     }
@@ -245,10 +237,8 @@ impl PrAble for OptTemplateSpec {
 
 impl PrAble for PortFormalListItem {
     fn pr(&self) -> Pra {
-        match self {
-            PortFormalListItem::Phys(tp, ids) => concat((tp, space(), ids)),
-            PortFormalListItem::Param(item) => item.pr(),
-        }
+        let PortFormalListItem(tp, ids) = self;
+        concat((tp, space(), ids))
     }
 }
 
@@ -297,15 +287,6 @@ impl PrAble for ProclikeDecl {
             .as_ref()
             .map_or(nil(), |(colon, tp)| concat((space(), colon, space(), tp)));
         concat((kw, space(), name, derived_type, ports, spec, ret_type))
-    }
-}
-
-impl PrAble for FuncRetType {
-    fn pr(&self) -> Pra {
-        match self {
-            FuncRetType::Phys(v) => v.pr(),
-            FuncRetType::Param(v) => v.pr(),
-        }
     }
 }
 

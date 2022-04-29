@@ -28,8 +28,8 @@ pub mod ast {
         pub Kw,
         pub Option<ChanDir>,
         pub CtrlLParen,
-        pub PhysicalInstType,
-        pub Option<(CtrlComma, PhysicalInstType)>,
+        pub InstType,
+        pub Option<(CtrlComma, InstType)>,
         pub CtrlRParen,
         pub Option<ChanDir>,
     );
@@ -51,23 +51,16 @@ pub mod ast {
     );
 
     #[derive(Debug)]
-    pub enum PhysicalInstType {
-        ChanType(Box<ChanType>),
-        NonChanType(NonChanType),
-    }
-
-    #[derive(Debug)]
     pub enum TemplateArg {
         // UserType(UserType),
-        PhysType(CtrlAtSign, PhysicalInstType),
+        PhysType(CtrlAtSign, InstType),
         ArrayedExprs(ArrayedExprs),
     }
 
-    pub type IFaceInstType = PhysicalInstType; // UserType;
-
     #[derive(Debug)]
     pub enum InstType {
-        Phys(PhysicalInstType),
+        ChanType(Box<ChanType>),
+        NonChanType(NonChanType),
         Param(ParamInstType),
     }
 
@@ -76,13 +69,7 @@ pub mod ast {
         PInt(Kw),
         PBool(Kw),
         PReal(Kw),
-        PType(Kw, CtrlLParen, PhysicalInstType, CtrlRParen), // PType(UserType),
-    }
-
-    #[derive(Debug)]
-    pub enum FuncRetType {
-        Phys(PhysicalInstType),
-        Param(ParamInstType),
+        PType(Kw, CtrlLParen, Box<InstType>, CtrlRParen), // PType(UserType),
     }
 
     // Types for Connections, Instances, and Aliases
@@ -242,10 +229,7 @@ pub mod ast {
     );
 
     #[derive(Debug)]
-    pub enum PortFormalListItem {
-        Phys(PhysicalInstType, IdList),
-        Param(ParamInstance),
-    }
+    pub struct PortFormalListItem(pub InstType, pub IdList);
 
     #[derive(Debug)]
     pub struct ParenedPortFormalList(
@@ -267,12 +251,12 @@ pub mod ast {
     pub struct DefIFace(pub Kw, pub Ident, pub ParenedPortFormalList, pub CtrlSemi);
 
     #[derive(Debug)]
-    pub struct OverrideOneSpec(pub PhysicalInstType, pub SepList1<Ident, CtrlComma>); // (UserType, Vec<Ident>);
+    pub struct OverrideOneSpec(pub InstType, pub SepList1<Ident, CtrlComma>); // (UserType, Vec<Ident>);
     #[derive(Debug)]
     pub struct OverrideSpec(pub Ctrl /* +{ */, pub Vec<OverrideOneSpec>, pub CtrlRBrace);
     #[derive(Debug)]
     pub struct InterfaceSpecItem(
-        pub IFaceInstType,
+        pub InstType,
         pub CtrlLBrace,
         pub SepList1<IdMap, CtrlComma>,
         pub CtrlRBrace,
@@ -309,10 +293,10 @@ pub mod ast {
     pub struct ProclikeDecl(
         pub (KwProclikeKind, Kw),
         pub Ident,
-        pub Option<(Ctrl /* <: */, PhysicalInstType)>,
+        pub Option<(Ctrl /* <: */, InstType)>,
         pub ParenedPortFormalList,
         pub Option<(Ctrl /* :> */, InterfaceSpec)>,
-        pub Option<(CtrlColon, FuncRetType)>,
+        pub Option<(CtrlColon, InstType)>,
     );
 
     #[derive(Debug)]
@@ -370,17 +354,18 @@ fn chan_dir(i: &[u8]) -> IResult<&[u8], ChanDir, ET> {
 //           T_INT [ chan_dir ] [ "<" !endgt expr ">" !noendgt ]
 //          | "bool" [ chan_dir ]
 //          | "enum" [ chan_dir ] "<" expr ">"
-
 // chan_type: "chan" [ chan_dir ] "(" physical_inst_type [ "," physical_inst_type ] ")" [ chan_dir ]
-
-pub fn physical_inst_type(i: &[u8]) -> IResult<&[u8], PhysicalInstType, ET> {
+// inst_type: {excl}
+//           physical_inst_type
+//          | param_type
+pub fn inst_type(i: &[u8]) -> IResult<&[u8], InstType, ET> {
     let chan_type = kw("chan")
         .then_cut(
             chan_dir
                 .opt()
                 .then(ctrl('('))
-                .then(physical_inst_type)
-                .then_opt(ctrl(',').then_cut(physical_inst_type))
+                .then(inst_type)
+                .then_opt(ctrl(',').then_cut(inst_type))
                 .then(ctrl(')'))
                 .then_opt(chan_dir),
         )
@@ -389,7 +374,7 @@ pub fn physical_inst_type(i: &[u8]) -> IResult<&[u8], PhysicalInstType, ET> {
 
     let arg = alt((
         ctrl('@')
-            .then(physical_inst_type) // user_type
+            .then(inst_type) // user_type
             .map(|(a, b)| TemplateArg::PhysType(a, b)),
         arrayed_exprs_no_gt.map(TemplateArg::ArrayedExprs),
     ));
@@ -408,22 +393,12 @@ pub fn physical_inst_type(i: &[u8]) -> IResult<&[u8], PhysicalInstType, ET> {
         .context("user type");
 
     alt((
-        chan_type.map(Box::new).map(PhysicalInstType::ChanType),
-        non_chan_type.map(PhysicalInstType::NonChanType),
+        chan_type.map(Box::new).map(InstType::ChanType),
+        non_chan_type.map(InstType::NonChanType),
+        param_inst_type.map(InstType::Param),
     ))
-    .context("physical inst type")
+    .context("inst type")
     .parse(i)
-}
-
-// inst_type: {excl}
-//           physical_inst_type
-//          | param_type
-pub fn inst_type(i: &[u8]) -> IResult<&[u8], InstType, ET> {
-    physical_inst_type
-        .map(InstType::Phys)
-        .or(param_inst_type.map(InstType::Param))
-        .context("inst type")
-        .parse(i)
 }
 // user_type: qualified_type [ chan_dir ] [ template_args ]
 // template_args: "<" !endgt { arrayed_exprs_or_type "," }* ">" !noendgt
@@ -449,11 +424,6 @@ pub fn inst_type(i: &[u8]) -> IResult<&[u8], InstType, ET> {
 //         .context("user type")
 //         .parse(i)
 // }
-
-pub fn iface_inst_type(i: &[u8]) -> IResult<&[u8], IFaceInstType, ET> {
-    physical_inst_type(i) // user_type(i)
-}
-
 // param_type: {excl}
 //            "pint"
 //           | "pbool"
@@ -462,8 +432,8 @@ pub fn iface_inst_type(i: &[u8]) -> IResult<&[u8], IFaceInstType, ET> {
 pub fn param_inst_type(i: &[u8]) -> IResult<&[u8], ParamInstType, ET> {
     alt((
         kw("ptype")
-            .then_cut(physical_inst_type.parened()) // user_type.parened()
-            .map(|(a, (b, c, d))| ParamInstType::PType(a, b, c, d)),
+            .then_cut(inst_type.parened()) // user_type.parened()
+            .map(|(a, (b, c, d))| ParamInstType::PType(a, b, Box::new(c), d)),
         kw("pint").map(ParamInstType::PInt),
         kw("pbool").map(ParamInstType::PBool),
         kw("preal").map(ParamInstType::PReal),
@@ -471,16 +441,10 @@ pub fn param_inst_type(i: &[u8]) -> IResult<&[u8], ParamInstType, ET> {
     .context("param type")
     .parse(i)
 }
+
 // func_ret_type: {excl}
 //               physical_inst_type
 //              | param_type
-
-pub fn func_ret_type(i: &[u8]) -> IResult<&[u8], FuncRetType, ET> {
-    let phys = physical_inst_type.map(FuncRetType::Phys);
-    let param = param_inst_type.map(FuncRetType::Param);
-    param.or(phys).context("func return type").parse(i)
-}
-
 // port_conn_spec: { "." ID "=" arrayed_exprs "," }**
 //               | { opt_arrayed_exprs "," }*
 fn port_conn_spec(i: &[u8]) -> IResult<&[u8], PortConnSpec, ET> {
@@ -826,12 +790,7 @@ fn id_list(i: &[u8]) -> IResult<&[u8], IdList, ET> {
     item.list1_sep_by(ctrl(',')).p().map(IdList).parse(i)
 }
 fn parened_port_formal_list(i: &[u8]) -> IResult<&[u8], ParenedPortFormalList, ET> {
-    let item = alt((
-        physical_inst_type
-            .then(id_list)
-            .map(|(a, b)| PortFormalListItem::Phys(a, b)),
-        param_instance.map(PortFormalListItem::Param),
-    ));
+    let item = inst_type.then(id_list).map(|(a, b)| PortFormalListItem(a, b));
     item.list1_sep_by(ctrl(';'))
         .opt()
         .parened()
@@ -862,7 +821,7 @@ fn method(i: &[u8]) -> IResult<&[u8], Method, ET> {
 // TODO for Func, add a check in the next pass that (1) there is exactly 1 chp block per function and (2) that it comes last
 fn proclike_body(i: &[u8]) -> IResult<&[u8], ProclikeBody, ET> {
     // user_type.then(ident.list1_sep_by(ctrl(',')).p());
-    let one_override = physical_inst_type
+    let one_override = inst_type
         .then(ident.list1_sep_by(ctrl(',')).p())
         .map(|(a, b)| OverrideOneSpec(a, b));
     let overrides_block = one_override
@@ -906,7 +865,7 @@ fn proclike_decl(i: &[u8]) -> IResult<&[u8], ProclikeDecl, ET> {
         .then(ctrl2('-', '>'))
         .then(ident)
         .map(|((a, b), c)| IdMap(a, b, c));
-    let interface_spec_item = iface_inst_type
+    let interface_spec_item = inst_type
         .then(id_map.list1_sep_by(ctrl(',')).braced())
         .map(|(a, (b, c, d))| InterfaceSpecItem(a, b, c, d));
     let interface_spec = interface_spec_item.list1_sep_by(ctrl(',')).p().map(InterfaceSpec);
@@ -915,10 +874,10 @@ fn proclike_decl(i: &[u8]) -> IResult<&[u8], ProclikeDecl, ET> {
     def_or_proc
         .then_cut(
             ident
-                .then_opt(ctrl2('<', ':').then_cut(physical_inst_type))
+                .then_opt(ctrl2('<', ':').then_cut(inst_type))
                 .then(parened_port_formal_list)
                 .then_opt(ctrl2(':', '>').then_cut(interface_spec))
-                .then_opt(ctrl(':').then_cut(func_ret_type)),
+                .then_opt(ctrl(':').then_cut(inst_type)),
         )
         .map(|(a, ((((b, c), d), e), f))| ProclikeDecl(a, b, c, d, e, f))
         .parse(i)
