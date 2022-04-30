@@ -215,6 +215,7 @@ pub enum CtrlN {
     Char2,
     Char3,
     Char1NotChar2,
+    Char1OrChar1,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -246,6 +247,13 @@ impl<'a> Parser<&'a [u8], Ctrl, ET<'a>> for CtrlC {
                 .parse(input),
             CtrlN::Char1NotChar2 => peek(not(tag(&self.spaced[0..2]).or(tag(&self.unspaced[0..2]))))
                 .ignore_then(tag(&self.spaced[0..1]).or(tag(&self.unspaced[0..1])))
+                .map(|vs: &[u8]| Ctrl::Ctrl(FTPtr::of_ptr(&vs[0])))
+                .context(self.label)
+                .parse(input),
+            CtrlN::Char1OrChar1 => tag(&self.spaced[0..1])
+                .or(tag(&self.unspaced[0..1]))
+                .or(tag(&self.spaced[1..2]))
+                .or(tag(&self.unspaced[1..2]))
                 .map(|vs: &[u8]| Ctrl::Ctrl(FTPtr::of_ptr(&vs[0])))
                 .context(self.label)
                 .parse(input),
@@ -725,14 +733,14 @@ impl<F, Sep> UntermT<F, Sep> {
     {
         self.delim_by(ctrl('<'), ctrl('>'))
     }
-    #[inline]
-    pub fn bracketed<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl, SepList1<OF, OS>, Ctrl), ET<'a>>
-    where
-        F: Parser<&'a [u8], OF, ET<'a>>,
-        Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
-    {
-        self.delim_by(ctrl('['), ctrl(']'))
-    }
+    // #[inline]
+    // pub fn bracketed<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl, SepList1<OF, OS>, Ctrl), ET<'a>>
+    // where
+    //     F: Parser<&'a [u8], OF, ET<'a>>,
+    //     Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
+    // {
+    //     self.delim_by(ctrl('['), ctrl(']'))
+    // }
 }
 
 impl<F, Sep> OptUntermT<F, Sep> {

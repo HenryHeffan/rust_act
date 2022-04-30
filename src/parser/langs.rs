@@ -73,11 +73,11 @@ mod lang_chp_hse {
             Plus,
             Minus,
         }
-        #[derive(Debug, Copy, Clone)]
+        #[derive(Debug)]
         pub enum RecvTypeCast {
-            AsInt(Kw, CtrlLParen, Ident, CtrlRParen),
-            AsBool(Kw, CtrlLParen, Ident, CtrlRParen),
-            Ident(Ident),
+            AsInt(Kw, CtrlLParen, ExprId, CtrlRParen),
+            AsBool(Kw, CtrlLParen, ExprId, CtrlRParen),
+            Ident(ExprId),
         }
         #[derive(Debug)]
         pub struct SendStmt(
@@ -187,12 +187,12 @@ mod lang_chp_hse {
     pub fn recv_type_cast(i: &[u8]) -> IResult<&[u8], RecvTypeCast, ET> {
         alt((
             kw("bool")
-                .then_cut(ident.parened())
+                .then_cut(expr_id.parened())
                 .map(|(a, (b, c, d))| RecvTypeCast::AsBool(a, b, c, d)),
             kw("int")
-                .then_cut(ident.parened())
+                .then_cut(expr_id.parened())
                 .map(|(a, (b, c, d))| RecvTypeCast::AsInt(a, b, c, d)),
-            ident.map(RecvTypeCast::Ident),
+            expr_id.map(RecvTypeCast::Ident),
         ))
         .parse(i)
     }
@@ -224,7 +224,8 @@ mod lang_chp_hse {
             .map(ChpStmt::MacroLoop);
 
         let parened_body = ctrl('(')
-            .then_cut(chp_item_list1().term_by(ctrl(')')).verify(|v| v.0.items.len() >= 2))
+            .then_cut(chp_item_list1().term_by(ctrl(')')))
+            // .verify(|v| v.0.items.len() >= 2 || (v.0.items.len() >= 1 && v.0.items[0].items.len() >= 2)))
             .map(|(a, (b, c))| ChpStmt::ParenedBody(a, ChpItemList(b), c))
             .context("parened body");
 
@@ -245,17 +246,20 @@ mod lang_chp_hse {
         }
 
         let send_stmt_after_ei = send_type
-            .then_cut(expr.opt().then_opt(recv_type.then_cut(recv_type_cast)))
-            .map(|(a, (b, c))| ChpStmtAfterExprId::SendStmt(a, b, c));
+            .then_cut(expr_no_qmark.opt().then_opt(recv_type.then_cut(recv_type_cast)))
+            .map(|(a, (b, c))| ChpStmtAfterExprId::SendStmt(a, b, c))
+            .context("send stmt");
 
         let recv_stmt_after_ei = recv_type
             .then_cut(recv_type_cast.opt().then_opt(send_type.then_cut(expr)))
-            .map(|(a, (b, c))| ChpStmtAfterExprId::RecvStmt(a, b, c));
+            .map(|(a, (b, c))| ChpStmtAfterExprId::RecvStmt(a, b, c))
+            .context("recv stmt");
 
         let assign_stmt_after_ei = ctrl2(':', '=')
             .then(expr)
-            .map(|(a, b)| ChpStmtAfterExprId::Assign(a, b));
-        let assign_bool_dir_stmt_after_ei = dir.map(ChpStmtAfterExprId::AssignBoolDir);
+            .map(|(a, b)| ChpStmtAfterExprId::Assign(a, b))
+            .context("assign stmt");
+        let assign_bool_dir_stmt_after_ei = dir.map(ChpStmtAfterExprId::AssignBoolDir).context("assign dir");
 
         let chp_stmt_after_ei = expr_id
             .then(alt((
@@ -347,14 +351,16 @@ mod lang_chp_hse {
                 ctrl2('-', '>'),
                 chp_item_list1().term_by(ctrl(')')),
             )))
-            .context("macro loop")
+            .context("macro loop branch")
             .map(|((a, b), (c, d, e, f, g, h, (i, j)))| GuardedCmd::Macro(a, b, c, d, e, f, g, h, ChpItemList(i), j));
         let else_branch = kw("else")
             .then_cut(ctrl2('-', '>').then(chp_item_list1().p()))
+            .context("else branch")
             .map(|(a, (b, c))| GuardedCmd::Else(a, b, ChpItemList(c)));
         let normal_branch = expr
             .then(ctrl2('-', '>'))
             .then(chp_item_list1().p())
+            .context("normal branch")
             .map(|((a, b), c)| GuardedCmd::Expr(a, b, ChpItemList(c)));
 
         alt((macro_branch, else_branch, normal_branch)).parse(i)
@@ -418,18 +424,29 @@ mod lang_chp_hse {
     // hse_comma_item: { hse_body_item "," }*
     // Instead, HSE should be parsed like chp, and then checked afterwords that it is in the correct subset of chp
     pub fn hse_body(i: &[u8]) -> IResult<&[u8], HseItemList, ET> {
-        chp_item_list1().p().map(ChpItemList).map(HseItemList).parse(i)
+        chp_item_list1()
+            .p()
+            .map(ChpItemList)
+            .map(HseItemList)
+            .context("hse body")
+            .parse(i)
     }
 
     fn hse_bodies(i: &[u8]) -> IResult<&[u8], HseBodies, ET> {
         let labeled_body = ident
-            .then(ctrl(':'))
-            .then(hse_body)
-            .then(ctrl(':'))
-            .then(ident)
-            .map(|((((a, b), c), d), e)| LabeledHseBody(a, b, c, d, e));
-        let labeled_bodies = labeled_body.list1_sep_by(ctrl(';')).p().map(HseBodies::Labeled);
-        hse_body.map(HseBodies::Body).or(labeled_bodies).parse(i)
+            .then(ctrl1_not_ctrl2(':', '='))
+            .then_cut(hse_body.then(ctrl(':')).then(ident))
+            .map(|((a, b), ((c, d), e))| LabeledHseBody(a, b, c, d, e))
+            .context("labeled hse body");
+        alt((
+            labeled_body
+                .list1_sep_by(ctrl(';'))
+                .p()
+                .map(HseBodies::Labeled)
+                .context("labeled hse bodies"),
+            hse_body.map(HseBodies::Body).context("normal hse body"),
+        ))
+        .parse(i)
     }
 
     // lang_chp: "chp" [ supply_spec ] "{" [ chp_body ] "}"
@@ -437,9 +454,11 @@ mod lang_chp_hse {
     // Instead, HSE should be parsed like chp, and then checked afterwords that it is in the correct subset of chp
     pub fn lang_hse(i: &[u8]) -> IResult<&[u8], LangHse, ET> {
         kw("hse")
-            .then(opt_supply_spec)
-            .then(hse_bodies.opt().braced())
-            .map(|((a, b), (c, d, e))| LangHse(a, b, c, d, e))
+            .then_cut(opt_supply_spec.then(ctrl('{')).then(alt((
+                ctrl('}').map(|v| (None, v)),
+                hse_bodies.then(ctrl('}')).cut().map(|(a, b)| (Some(a), b)),
+            ))))
+            .map(|(a, ((b, c), (d, e)))| LangHse(a, b, c, d, e))
             .context("hse block")
             .parse(i)
     }
@@ -502,7 +521,7 @@ mod lang_prs {
             MacroLoop(MacroLoop<(), PrsBody>),
             Pass(
                 (PassNPKind, Kw),
-                SizeSpec,
+                Option<SizeSpec>,
                 CtrlLParen,
                 ExprId,
                 CtrlComma,
@@ -513,7 +532,7 @@ mod lang_prs {
             ),
             TransGate(
                 Kw,
-                SizeSpec,
+                Option<SizeSpec>,
                 CtrlLParen,
                 ExprId,
                 CtrlComma,
@@ -574,8 +593,9 @@ mod lang_prs {
     fn size_spec(i: &[u8]) -> IResult<&[u8], SizeSpec, ET> {
         ctrl('<')
             .then_cut(
-                expr.then_opt(ctrl(',').then_cut(expr.then_opt(ctrl(',').then_cut(ident))))
-                    .then_opt(ctrl(';').then_cut(expr)),
+                expr_no_gt
+                    .then_opt(ctrl(',').then_cut(expr_no_gt.then_opt(ctrl(',').then_cut(ident))))
+                    .then_opt(ctrl(';').then_cut(expr_no_gt)),
             )
             .then(ctrl('>'))
             .map(|((a, ((b, c), d)), e)| SizeSpec(a, b, c.map(|(x, (y, z))| (x, y, z)), d, e))
@@ -627,12 +647,12 @@ mod lang_prs {
     fn prs_item(i: &[u8]) -> IResult<&[u8], PrsItem, ET> {
         let pass = alt((
             kw("passn").map(|v| (PassNPKind::N, v)),
-            kw("passn").map(|v| (PassNPKind::P, v)),
+            kw("passp").map(|v| (PassNPKind::P, v)),
         ))
-        .then_cut(size_spec.then(expr_id_comma_3_tuple))
+        .then_cut(size_spec.opt().then(expr_id_comma_3_tuple))
         .map(|(a, (b, (c, d, e, f, g, h, i)))| PrsItem::Pass(a, b, c, d, e, f, g, h, i));
         let transgate = kw("transgate")
-            .then_cut(size_spec.then(expr_id_comma_4_tuple))
+            .then_cut(size_spec.opt().then(expr_id_comma_4_tuple))
             .map(|(a, (b, (c, d, e, f, g, h, i, j, k)))| PrsItem::TransGate(a, b, c, d, e, f, g, h, i, j, k));
 
         let macro_loop = ctrl('(')
@@ -675,23 +695,27 @@ mod lang_prs {
 
         alt((
             // These three start with a unique keyword at the begining, so it is easy to apply the "cut" operator afterwords
-            pass,
-            transgate,
+            pass.context("pass"),
+            transgate.context("transgate"),
             // The other four are harder to tell apart. Both the macro-loop and the rule/at_rule can being with a paren.
             // Both rule/at_rule and sub-block being with a identifier.
 
             // TODO apply a "longest of" here
-            uncut(macro_loop),
-            uncut(rule),
-            uncut(at_rule),
-            uncut(sub_block),
+            uncut(macro_loop.context("macro loop")),
+            uncut(rule.context("rule")),
+            uncut(at_rule.context("at rule")),
+            uncut(sub_block.context("subblock")),
         ))
         .parse(i)
     }
 
     #[inline]
     fn prs_body_row<'a>() -> impl Parser<&'a [u8], PrsBodyRow, ET<'a>> {
-        attr_list.opt().then(prs_item).map(|(a, b)| PrsBodyRow(a, b))
+        cut_bracketed_attr_list
+            .opt()
+            .then(prs_item)
+            .map(|(a, b)| PrsBodyRow(a, b))
+            .context("prs body row")
     }
 
     // lang_prs: "prs" [ supply_spec ] [ "*" ] "{" [ prs_body ] "}"
@@ -734,7 +758,7 @@ mod lang_spec {
 
         #[derive(Debug)]
         pub enum SpecItem {
-            Normal(Ident, CtrlLParen, SepList1<ExprId, CtrlComma>, CtrlRParen),
+            Normal(Ident, CtrlLParen, SepList1<ExprIdOrStar, CtrlComma>, CtrlRParen),
             Timing(Kw, TimingBody),
         }
 
@@ -808,8 +832,9 @@ mod lang_spec {
             .parse(i)
     }
     fn spec_item(i: &[u8]) -> IResult<&[u8], SpecItem, ET> {
+        // TODO is this right?
         let normal_item = ident
-            .then(expr_id.list1_sep_by(ctrl(',')).parened())
+            .then(expr_id_or_star.list1_sep_by(ctrl(',')).parened())
             .map(|(a, (b, c, d))| SpecItem::Normal(a, b, c, d));
 
         let timing_item = kw("timing")
@@ -847,19 +872,6 @@ mod lang_dataflow {
     pub mod ast {
         use super::*;
         use crate::parser::utils::SepList1;
-
-        #[derive(Debug)]
-        pub enum ExprIdOrStar {
-            ExprId(ExprId),
-            Star(CtrlStar),
-        }
-
-        #[derive(Debug)]
-        pub enum ExprIdOrStarOrBar {
-            ExprId(ExprId),
-            Star(CtrlStar),
-            Bar(CtrlVBar),
-        }
 
         #[derive(Debug, Clone, Copy)]
         pub enum BracketedOrParened {
@@ -933,21 +945,8 @@ mod lang_dataflow {
     // expr_id_or_star_or_bar: {excl}
     //                        expr_id_or_star
     //                       | "|"
-    fn expr_id_or_star(i: &[u8]) -> IResult<&[u8], ExprIdOrStar, ET> {
-        alt((
-            ctrl('*').map(ExprIdOrStar::Star),
-            expr_id.cut().map(ExprIdOrStar::ExprId),
-        ))
-        .parse(i)
-    }
 
     fn dataflow_item(i: &[u8]) -> IResult<&[u8], DataflowItem, ET> {
-        let expr_id_or_star_or_bar = alt((
-            expr_id.map(ExprIdOrStarOrBar::ExprId),
-            ctrl('*').map(ExprIdOrStarOrBar::Star),
-            ctrl('|').map(ExprIdOrStarOrBar::Bar),
-        ));
-
         let cluster = kw("dataflow_cluster")
             .then_cut(dataflow_item.list1_sep_by(ctrl(';')).braced())
             .map(|(a, (b, c, d))| DataflowItem::Cluster(a, b, c, d));
@@ -1056,7 +1055,7 @@ mod lang_sizing {
         pub struct DirectivePart(
             pub (Dir, Ctrl),
             pub Expr,
-            pub Option<(CtrlComma, (Ident, Option<(CtrlComma, Expr)>))>,
+            pub Option<(CtrlComma, (Expr, Option<(CtrlComma, Expr)>))>,
         );
 
         #[derive(Debug)]
@@ -1091,18 +1090,25 @@ mod lang_sizing {
 
     fn directive_part(i: &[u8]) -> IResult<&[u8], DirectivePart, ET> {
         dir.then(expr)
-            .then_opt(ctrl(',').then_cut(ident.then_opt(ctrl(',').then_cut(expr))))
+            .then_opt(ctrl(',').then_cut(expr.then_opt(ctrl(',').then_cut(expr))))
             .map(|((a, b), c)| DirectivePart(a, b, c))
             .parse(i)
     }
 
     fn sizing_item(i: &[u8]) -> IResult<&[u8], SizingItem, ET> {
         let setup_item = ident
-            .then(ctrl2('<', '-').then_cut(expr))
-            .map(|(a, (b, c))| SizingItem::Setup(a, b, c));
+            .then(ctrl2('<', '-'))
+            .then_cut(expr)
+            .map(|((a, b), c)| SizingItem::Setup(a, b, c));
         let directive_item = expr_id
-            .then(directive_part.then_opt(ctrl(';').then_cut(directive_part)).braced())
-            .map(|(a, (b, (c, d), e))| SizingItem::Directive(a, b, c, d, e));
+            .then(
+                ctrl('{').then_cut(
+                    directive_part
+                        .then_opt(ctrl(';').then_cut(directive_part))
+                        .then(ctrl('}')),
+                ),
+            )
+            .map(|(a, (b, ((c, d), e)))| SizingItem::Directive(a, b, c, d, e));
         let directive_macro_loop = ctrl('(')
             .then_cut(tuple((
                 ctrl(';'),

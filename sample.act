@@ -1,7 +1,12 @@
- 
-defproc testme() {
+defproc comm() {
+  int<32> x;
+  int<32> y;
+  chan(int<32>) a;
 
   chp {
-        [  ft -> a := b [] c -> d:=e]
+    x := 156707415 ;
+    (skip, a!x , a?y)      // [00001001010101110010101001010111]
   }
 }
+
+comm c;

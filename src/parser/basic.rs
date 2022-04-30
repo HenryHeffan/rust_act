@@ -1,10 +1,5 @@
 pub use crate::parser::utils::{uncut, CtrlC, CtrlN, KwC, Many0, Many1, MyParserExt, ParserExt2, Unterm, ET};
-use nom::{
-    branch::alt,
-    bytes::complete::tag,
-    combinator::{not, peek},
-    IResult, Parser,
-};
+use nom::{branch::alt, bytes::complete::tag, combinator::peek, sequence::tuple, IResult, Parser};
 use nom_supreme::parser_ext::ParserExt;
 
 use crate::token::{FlatToken, TokenKind, Unspaced};
@@ -106,7 +101,8 @@ pub mod ast {
     #[derive(Clone, Debug, PartialEq, Eq, Hash, Copy)]
     pub enum UnaryOp {
         UMinus,
-        Not,
+        Tilde,
+        Hash,
     }
 
     #[derive(Clone, Debug, PartialEq, Eq, Hash, Copy)]
@@ -132,9 +128,9 @@ pub mod ast {
         ArrayAccess,
     }
 
-    #[derive(Debug, Clone)]
+    #[derive(Debug)]
     pub enum FuncName {
-        Ident(Ident),
+        QualifiedName(QualifiedName),
         Int(Kw),
         Bool(Kw),
     }
@@ -174,6 +170,16 @@ pub mod ast {
             SepList1<Self, CtrlComma>,
             CtrlRParen,
         ),
+        MacroLoop(
+            CtrlLParen,
+            (BinaryOp, Ctrl),
+            Ident,
+            CtrlColon,
+            Box<ExprRange>,
+            CtrlColon,
+            Box<Self>,
+            CtrlRParen,
+        ),
         Parened(CtrlLParen, Box<Self>, CtrlRParen),
     }
     pub type ArrayedExprs = Arrayed<Expr>;
@@ -185,15 +191,29 @@ pub mod ast {
         Str(StrTok),
     }
 
+    #[derive(Clone, Debug, PartialEq, Eq, Hash, Copy)]
+    pub enum AndOrOr {
+        And,
+        Or,
+    }
+
     #[derive(Debug)]
     pub enum PrsExpr {
-        Ident(Ident),
+        Num(Num),
+        ExprId(ExprId),
+        AtIdent(CtrlAtSign, Ident),
+        Sized(
+            Box<Self>,
+            CtrlLAngBrace,
+            SepList1<Expr, Ctrl /* I think ; or , */>,
+            CtrlRAngBrace,
+        ),
+        Braced(CtrlLBrace, (Dir, Ctrl), Box<Self>, CtrlRBrace, Box<Self>),
         Parened(CtrlLParen, Box<Self>, CtrlRParen),
+        MacroLoop(MacroLoop<(AndOrOr, Ctrl), Box<Self>>),
         And(Ctrl, Box<Self>, Box<Self>),
         Or(Ctrl, Box<Self>, Box<Self>),
         Not(Ctrl, Box<Self>),
-        ArrAccess(Box<Self>, CtrlLBracket, ExprRange, CtrlRBracket),
-        Dot(Box<Self>, CtrlDot, Ident),
     }
 
     #[derive(Debug)]
@@ -203,6 +223,19 @@ pub mod ast {
     }
     #[derive(Debug)]
     pub struct ExprId(pub SepList1<BaseId, CtrlDot>);
+
+    #[derive(Debug)]
+    pub enum ExprIdOrStar {
+        ExprId(ExprId),
+        Star(CtrlStar),
+    }
+
+    #[derive(Debug)]
+    pub enum ExprIdOrStarOrBar {
+        ExprId(ExprId),
+        Star(CtrlStar),
+        Bar(CtrlVBar),
+    }
 
     pub type ArrayedExprIds = Arrayed<ExprId>;
 
@@ -463,6 +496,36 @@ pub fn ctrl3(c1: char, c2: char, c3: char) -> CtrlC {
     }
 }
 
+#[inline]
+pub fn alt_ctrl11(c1: char, c2: char) -> CtrlC {
+    macro_rules! make_case {
+        ($c1:expr, $c2:expr) => {{
+            const PADDING: u8 = 0;
+            const SPACED: [u8; 3] = [
+                TokenKind::from_ctrl($c1, Unspaced::Yes) as u8,
+                TokenKind::from_ctrl($c2, Unspaced::Yes) as u8,
+                PADDING,
+            ];
+            const UNSPACED: [u8; 3] = [
+                TokenKind::from_ctrl($c1, Unspaced::No) as u8,
+                TokenKind::from_ctrl($c2, Unspaced::No) as u8,
+                PADDING,
+            ];
+    const LABEL: &'static str = stringify!($c1 $c2);
+            CtrlC {
+                v: CtrlN::Char1OrChar1,
+                spaced: &SPACED,
+                unspaced: &UNSPACED,
+                label: LABEL,
+            }
+        }};
+    }
+    match (c1, c2) {
+        (',', ';') => make_case!(',', ';'),
+        c => panic!("no such parser implemented {:?}", c),
+    }
+}
+
 pub fn qualified_name(i: &[u8]) -> IResult<&[u8], QualifiedName, ET> {
     let leading_colons = ctrl2(':', ':').opt();
     leading_colons
@@ -473,12 +536,11 @@ pub fn qualified_name(i: &[u8]) -> IResult<&[u8], QualifiedName, ET> {
 }
 
 // attr_list: "[" { ID "=" expr ";" }** "]"
-pub fn attr_list(i: &[u8]) -> IResult<&[u8], BracketedAttrList, ET> {
+pub fn cut_bracketed_attr_list(i: &[u8]) -> IResult<&[u8], BracketedAttrList, ET> {
     let one_attr = ident.then(ctrl('=')).then(expr).map(|((a, b), c)| (a, b, c));
-    one_attr
-        .list1_sep_by(ctrl(';'))
-        .bracketed()
-        .map(|(a, b, c)| BracketedAttrList(a, b, c))
+    ctrl('[')
+        .then_cut(one_attr.list1_sep_by(ctrl(';')).term_by(ctrl(']')))
+        .map(|(a, (b, c))| BracketedAttrList(a, b, c))
         .parse(i)
 }
 
@@ -491,11 +553,19 @@ struct UnaryExprRecParser<F: Clone + Copy> {
     expr: F,
 }
 
+#[inline]
+fn expr_func_name(i: &[u8]) -> IResult<&[u8], FuncName, ET> {
+    alt((
+        kw("int").map(FuncName::Int),
+        kw("bool").map(FuncName::Bool),
+        uncut(qualified_name.map(FuncName::QualifiedName)),
+    ))
+    .parse(i)
+}
 impl<'a, F> Parser<&'a [u8], Expr, ET<'a>> for UnaryExprRecParser<F>
 where
     F: Parser<&'a [u8], Expr, ET<'a>> + Clone + Copy,
 {
-    #[inline]
     fn parse(&mut self, i: &'a [u8]) -> IResult<&'a [u8], Expr, ET<'a>>
     where
         F: Parser<&'a [u8], Expr, ET<'a>> + Clone + Copy,
@@ -505,32 +575,57 @@ where
             .then_cut((&self.expr).list1_sep_by(ctrl(',')).term_by(ctrl('}')))
             .map(|(a, (b, c))| Expr::Concat(a, b, c));
 
-        let func_name = alt((
-            kw("int").map(FuncName::Int),
-            kw("bool").map(FuncName::Bool),
-            ident.map(FuncName::Ident),
-        ));
-        let template_params = ctrl('<')
-            .then_cut(expr_no_gt.list1_sep_by(ctrl(',')).term_by(ctrl('>')))
-            .map(|(a, (b, c))| FuncTemplateParams(a, b, c));
-        let func_call = func_name
-            .then_opt(template_params)
-            .then(ctrl('('))
-            .then_cut((&self.expr).list1_sep_by(ctrl(',')).term_by(ctrl(')')))
-            .map(|(((name, template_params), lparen), (args, rparen))| {
-                Expr::Call(name, template_params, lparen, args, rparen)
+        let func_call = expr_func_name
+            .then(ctrl('(').then_cut((&self.expr).list1_sep_by(ctrl(',')).term_by(ctrl(')'))))
+            .map(|(name, (lparen, (args, rparen)))| Expr::Call(name, None, lparen, args, rparen));
+        let templated_func_call = expr_func_name
+            .then_cut(
+                ctrl('<')
+                    .then(expr_no_gt.list1_sep_by(ctrl(',')).term_by(ctrl('>')))
+                    .then(ctrl('('))
+                    .then(
+                        (&self.expr).list1_sep_by(ctrl(','))
+                            .term_by(ctrl(')'))
+                    ),
+            )
+            .map(|(name, (((langle,(template_params,rangle)),lparen),(args,rparen)))| {
+                Expr::Call(
+                    name,
+                    Some(FuncTemplateParams(langle, template_params, rangle)),
+                    lparen,
+                    args,
+                    rparen,
+                )
             });
 
+        let macro_loop_op = alt((
+            ctrl('*').map(|v| (BinaryOp::Mul, v)),
+            ctrl('+').map(|v| (BinaryOp::Plus, v)),
+            ctrl('&').map(|v| (BinaryOp::And, v)),
+            ctrl('^').map(|v| (BinaryOp::Xor, v)),
+            ctrl('|').map(|v| (BinaryOp::Or, v)),
+        ));
+
+        let macro_loop = ctrl('(')
+            .then(macro_loop_op)
+            .then_cut(tuple((ident, ctrl(':'), expr_range, ctrl(':'), self.expr, ctrl(')'))))
+            .context("prs expr macro loop")
+            .map(|((a, b), (c, d, e, f, g, h))| Expr::MacroLoop(a, b, c, d, Box::new(e), f, Box::new(g), h));
+
         let atom = alt((
-            num.map(Expr::Num),
+            num.map(Expr::Num).context("num"),
             // bitfield and func_call go before "local"
-            uncut(func_call),
-            ident.map(Expr::Ident), // TODO support qualified names?
+            func_call.context("func call"),                  // uncut
+            uncut(templated_func_call.context("templated")), // this is ambiguous because it could also often be a expression
+            ident.map(Expr::Ident).context("ident"),         // TODO support qualified names?
+            macro_loop,
             ctrl('(')
                 .then_cut((&self.expr).then(ctrl(')')))
-                .map(|(a, (b, c))| Expr::Parened(a, Box::new(b), c)),
-            concat,
-        ));
+                .map(|(a, (b, c))| Expr::Parened(a, Box::new(b), c))
+                .context("parened expr"),
+            concat.context("concat"),
+        ))
+        .context("atom");
 
         // https://en.cppreference.com/w/c/language/operator_precedence
 
@@ -559,6 +654,7 @@ where
                     .many0()
                     .term_by_peek_not_alt2(ctrl1_not_ctrl2('[', ']'), ctrl1_not_ctrl2('.', '.')),
             )
+            .context("access")
             .map(|(lhs, accs)| {
                 accs.into_iter().fold(lhs, |lhs, access| match access {
                     AccessKind::Arr(a, b, c, d) => Expr::ArrAccess(Box::new(lhs), a, Box::new(b), c, d),
@@ -582,7 +678,8 @@ where
         // Unary operators have precidence 2
         let op = alt((
             ctrl('-').map(|v| (UnaryOp::UMinus, v)),
-            ctrl('~').map(|v| (UnaryOp::Not, v)),
+            ctrl('~').map(|v| (UnaryOp::Tilde, v)),
+            ctrl('#').map(|v| (UnaryOp::Hash, v)),
         ));
 
         // This is an ok use of the nom version of "many0", because all of the things being parsed are 1 token long
@@ -612,7 +709,7 @@ where
                 (self.infix_binary_ops)
                     .then(self.unary_expr)
                     .many0()
-                    .term_by_peek_not(infix_binary_ops),
+                    .term_by_peek_not(self.infix_binary_ops),
             )
             .map(|(n0, ns)| {
                 // this bit of code is gross as it uses a mutable algorithm. It scans over the list [node0, nodes[0], nodes[1], ...]
@@ -653,12 +750,12 @@ where
     }
 }
 
-struct ExprParser<F: Clone + Copy, G: Clone + Copy> {
+struct QueryParser<F: Clone + Copy, G: Clone + Copy> {
     expr: F,
     infix_binary_ops: G,
 }
 
-impl<'a, F, G> Parser<&'a [u8], Expr, ET<'a>> for ExprParser<F, G>
+impl<'a, F, G> Parser<&'a [u8], Expr, ET<'a>> for QueryParser<F, G>
 where
     F: Parser<&'a [u8], Expr, ET<'a>> + Clone + Copy,
     G: Parser<&'a [u8], (BinaryOp, Ctrl), ET<'a>> + Clone + Copy,
@@ -703,9 +800,7 @@ fn infix_binary_ops(i: &[u8]) -> IResult<&[u8], (BinaryOp, Ctrl), ET> {
         ctrl('%').map(|v| (BinaryOp::Div, v)),
         ctrl('+').map(|v| (BinaryOp::Plus, v)),
         // This would be invalid syntax anyway, and this stops us from parsing a-> b as a misformatted expression
-        ctrl('-')
-            .then_ignore(peek(not(ctrl('>'))))
-            .map(|v| (BinaryOp::Minus, v)),
+        ctrl1_not_ctrl2('-', '>').map(|v| (BinaryOp::Minus, v)),
         ctrl3('>', '>', '>').map(|v| (BinaryOp::ARShift, v)),
         ctrl2('>', '>').map(|v| (BinaryOp::RShift, v)),
         ctrl2('<', '<').map(|v| (BinaryOp::LShift, v)),
@@ -717,7 +812,7 @@ fn infix_binary_ops(i: &[u8]) -> IResult<&[u8], (BinaryOp, Ctrl), ET> {
         ctrl2('!', '=').map(|v| (BinaryOp::NotEq, v)),
         ctrl('&').map(|v| (BinaryOp::And, v)),
         ctrl('^').map(|v| (BinaryOp::Xor, v)),
-        ctrl('|').map(|v| (BinaryOp::Or, v)),
+        ctrl1_not_ctrl2('|', ']').map(|v| (BinaryOp::Or, v)),
     ))(i)
 }
 
@@ -728,9 +823,7 @@ fn infix_binary_ops_no_gt(i: &[u8]) -> IResult<&[u8], (BinaryOp, Ctrl), ET> {
         ctrl('%').map(|v| (BinaryOp::Div, v)),
         ctrl('+').map(|v| (BinaryOp::Plus, v)),
         // This would be invalid syntax anyway, and this stops us from parsing a-> b as a misformatted expression
-        ctrl('-')
-            .then_ignore(peek(not(ctrl('>'))))
-            .map(|v| (BinaryOp::Minus, v)),
+        ctrl1_not_ctrl2('-', '>').map(|v| (BinaryOp::Minus, v)),
         // ctrl3('>', '>', '>').map(|v| (BinaryOp::ARShift, v)),
         // ctrl2('>', '>').map(|v| (BinaryOp::RShift, v)),
         ctrl2('<', '<').map(|v| (BinaryOp::LShift, v)),
@@ -742,16 +835,25 @@ fn infix_binary_ops_no_gt(i: &[u8]) -> IResult<&[u8], (BinaryOp, Ctrl), ET> {
         ctrl2('!', '=').map(|v| (BinaryOp::NotEq, v)),
         ctrl('&').map(|v| (BinaryOp::And, v)),
         ctrl('^').map(|v| (BinaryOp::Xor, v)),
-        ctrl('|').map(|v| (BinaryOp::Or, v)),
+        ctrl1_not_ctrl2('|', ']').map(|v| (BinaryOp::Or, v)),
     ))(i)
 }
 
 pub fn expr(i: &[u8]) -> IResult<&[u8], Expr, ET> {
-    ExprParser { expr, infix_binary_ops }.context("expr").parse(i)
+    QueryParser { expr, infix_binary_ops }.context("expr").parse(i)
+}
+
+pub fn expr_no_qmark(i: &[u8]) -> IResult<&[u8], Expr, ET> {
+    BinaryExprRecParser {
+        unary_expr: UnaryExprRecParser { expr },
+        infix_binary_ops,
+    }
+    .context("expr")
+    .parse(i)
 }
 
 pub fn expr_no_gt(i: &[u8]) -> IResult<&[u8], Expr, ET> {
-    ExprParser {
+    QueryParser {
         expr,
         infix_binary_ops: infix_binary_ops_no_gt,
     }
@@ -769,45 +871,45 @@ pub fn expr_or_str(i: &[u8]) -> IResult<&[u8], ExprOrStr, ET> {
 }
 
 fn prs_unary_rec(i: &[u8]) -> IResult<&[u8], PrsExpr, ET> {
+    let and_or_or = alt((
+        ctrl('&').map(|v| (AndOrOr::And, v)),
+        ctrl('|').map(|v| (AndOrOr::Or, v)),
+    ));
+
     // 'Atoms' are expressions that contain no ambiguity
     let atom = alt((
-        ident.map(PrsExpr::Ident), // TODO support qualified names?
+        num.map(PrsExpr::Num),
+        ctrl('@').then(ident).map(|(a, b)| PrsExpr::AtIdent(a, b)),
+        expr_id.map(PrsExpr::ExprId), // TODO support qualified names?
+        ctrl('(')
+            .then(and_or_or)
+            .then_cut(tuple((ident, ctrl(':'), expr_range, ctrl(':'), prs_expr, ctrl(')'))))
+            .context("prs expr macro loop")
+            .map(|((a, b), (c, d, e, f, g, h))| MacroLoop(a, b, c, d, e, f, Box::new(g), h))
+            .map(PrsExpr::MacroLoop),
         ctrl('(')
             .then_cut(prs_expr.then(ctrl(')')))
             .map(|(a, (b, c))| PrsExpr::Parened(a, Box::new(b), c)),
     ));
 
     // https://en.cppreference.com/w/c/language/operator_precedence
-    // apply function calls, array accesses, and dot operators
-    enum AccessKind {
-        // Func(Vec<Spanned<Expr>>),
-        Arr(CtrlLBracket, ExprRange, CtrlRBracket),
-        Dot(CtrlDot, Ident),
-    }
 
-    let arr_access = ctrl('[')
-        .then_cut(expr_range.then(ctrl(']')))
-        .map(|(a, (b, c))| AccessKind::Arr(a, b, c));
-    let dot_access =
-        peek(not(ctrl2('.', '.'))).ignore_then(ctrl('.').then_cut(ident).map(|(a, b)| AccessKind::Dot(a, b)));
-
-    let access = atom
-        .then(
-            arr_access
-                .or(dot_access)
-                .many0()
-                .term_by_peek_not_alt2(ctrl('['), ctrl('.')),
-        )
-        .map(|(lhs, accs)| {
-            accs.into_iter().fold(lhs, |lhs, access| match access {
-                AccessKind::Arr(a, b, c) => PrsExpr::ArrAccess(Box::new(lhs), a, b, c),
-                AccessKind::Dot(a, b) => PrsExpr::Dot(Box::new(lhs), a, b),
-            })
+    // TODO I dont know if these are right!
+    let sized = atom
+        .then_opt(ctrl('<').then_cut(expr_no_gt.list1_sep_by(alt_ctrl11(',', ';')).term_by(ctrl('>'))))
+        .map(|(lhs, sizing)| match sizing {
+            None => lhs,
+            Some((langle, (es, rangle))) => PrsExpr::Sized(Box::new(lhs), langle, es, rangle),
         });
+    let braced_clause = ctrl('{').then_cut(dir.then(prs_expr).then(ctrl('}')));
+    let braced = braced_clause.opt().then(sized).map(|(braces, lhs)| match braces {
+        None => lhs,
+        Some((lbrace, ((dir, o), rbrace))) => PrsExpr::Braced(lbrace, dir, Box::new(o), rbrace, Box::new(lhs)),
+    });
 
     // This is an ok use of the nom version of "many0", because all of the things being parsed are 1 token long
     nom::multi::many0(ctrl('~'))
-        .then(access)
+        .then(braced)
         .map(|(ops, a)| ops.iter().rev().fold(a, |e, c| PrsExpr::Not(*c, Box::new(e))))
         .parse(i)
 }
@@ -895,7 +997,10 @@ pub fn arrayed_expr_ids(i: &[u8]) -> IResult<&[u8], Arrayed<ExprId>, ET> {
 // expr_id: { base_id "." }*
 
 pub fn base_id(i: &[u8]) -> IResult<&[u8], BaseId, ET> {
-    let bracketed_spare_ranges = expr_range.bracketed().many0().term_by_peek_not(ctrl('['));
+    let bracketed_spare_ranges = expr_range
+        .bracketed()
+        .many0()
+        .term_by_peek_not(ctrl1_not_ctrl2('[', ']'));
 
     // first look ahead to see if there are brackets. If there are, then parse brackets until there arent brackets any more
     ident
@@ -911,6 +1016,23 @@ pub fn expr_id(i: &[u8]) -> IResult<&[u8], ExprId, ET> {
         .map(ExprId)
         .context("expr id")
         .parse(i)
+}
+
+pub fn expr_id_or_star(i: &[u8]) -> IResult<&[u8], ExprIdOrStar, ET> {
+    alt((
+        ctrl('*').map(ExprIdOrStar::Star),
+        expr_id.cut().map(ExprIdOrStar::ExprId),
+    ))
+    .parse(i)
+}
+
+pub fn expr_id_or_star_or_bar(i: &[u8]) -> IResult<&[u8], ExprIdOrStarOrBar, ET> {
+    alt((
+        expr_id.map(ExprIdOrStarOrBar::ExprId),
+        ctrl('*').map(ExprIdOrStarOrBar::Star),
+        ctrl('|').map(ExprIdOrStarOrBar::Bar),
+    ))
+    .parse(i)
 }
 
 // supply_spec: "<" expr_id [ "," expr_id ] [ "|" expr_id "," expr_id ] ">"

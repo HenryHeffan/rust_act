@@ -222,7 +222,7 @@ pub mod ast {
     pub struct DefEnum(pub Kw, pub Ident, pub EnumBody);
 
     #[derive(Debug)]
-    pub struct OverrideOneSpec(pub InstType, pub SepList1<Ident, CtrlComma>); // (UserType, Vec<Ident>);
+    pub struct OverrideOneSpec(pub InstType, pub SepList1<Ident, CtrlComma>, pub CtrlSemi);
     #[derive(Debug)]
     pub struct OverrideSpec(pub Ctrl /* +{ */, pub Vec<OverrideOneSpec>, pub CtrlRBrace);
     #[derive(Debug)]
@@ -457,7 +457,7 @@ fn connection_id(i: &[u8]) -> IResult<&[u8], ConnectionId, ET> {
         .then_cut(port_conn_spec.then(ctrl(')')))
         .map(|(a, (b, c))| (a, b, c))
         .opt();
-    let opt_attr_list = ctrl('@').then_cut(attr_list).map(|(a, b)| (a, b)).opt();
+    let opt_attr_list = ctrl('@').then_cut(cut_bracketed_attr_list).map(|(a, b)| (a, b)).opt();
 
     let bracketed_spare_ranges = expr_range.bracketed().many0().term_by_peek_not(ctrl('['));
     ident
@@ -708,12 +708,11 @@ fn method(i: &[u8]) -> IResult<&[u8], Method, ET> {
 fn proclike_body(i: &[u8]) -> IResult<&[u8], ProclikeBody, ET> {
     // user_type.then(ident.list1_sep_by(ctrl(',')).p());
     let one_override = inst_type
-        .then(ident.list1_sep_by(ctrl(',')).p())
-        .map(|(a, b)| OverrideOneSpec(a, b));
-    let overrides_block = one_override
-        .many1()
-        .delim_by(ctrl2('+', '{'), ctrl('}'))
-        .map(|(a, b, c)| OverrideSpec(a, b, c));
+        .then(ident.list1_sep_by(ctrl(',')).term_by(ctrl(';')))
+        .map(|(a, (b, c))| OverrideOneSpec(a, b, c));
+    let overrides_block = ctrl2('+', '{')
+        .then_cut(one_override.many1().term_by(ctrl('}')))
+        .map(|(a, (b, c))| OverrideSpec(a, b, c));
 
     let methods_body = kw("methods")
         .then_cut(method.many1().braced())
@@ -742,7 +741,7 @@ fn proclike_decl(i: &[u8]) -> IResult<&[u8], ProclikeDecl, ET> {
         kw("defproc").map(|v| (KwProclikeKind::DefProc, v)),
         kw("defcell").map(|v| (KwProclikeKind::DefCell, v)),
         kw("defchan").map(|v| (KwProclikeKind::DefChan, v)),
-        kw("defdata").map(|v| (KwProclikeKind::DefData, v)),
+        kw("deftype").map(|v| (KwProclikeKind::DefData, v)),
         kw("function").map(|v| (KwProclikeKind::DefFunc, v)),
         kw("interface").map(|v| (KwProclikeKind::DefIFace, v)),
     ));
@@ -836,17 +835,17 @@ fn import(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
     //            | "import" ID "=>" ID ";"
     let import_string = string.map(Import::String);
 
-    let import_namespace = qualified_name
-        .then_opt(ctrl2('-', '>').then(ident))
-        .map(|(ns, i)| Import::Namespace(ns, i));
-
     let import_ident = ident
         .then(ctrl2('=', '>'))
-        .then(ident)
+        .then_cut(ident)
         .map(|((a, b), c)| Import::Ident(a, b, c));
 
+    let import_namespace = qualified_name
+        .then_opt(ctrl2('-', '>').then_cut(ident))
+        .map(|(ns, i)| Import::Namespace(ns, i));
+
     kw("import")
-        .then_cut(import_string.or(import_namespace).or(import_ident).then(ctrl(';')))
+        .then_cut(import_string.or(import_ident).or(import_namespace).then(ctrl(';')))
         .map(|(a, (b, c))| TopItem::Import(a, b, c))
         .context("import")
         .parse(i)
@@ -905,14 +904,12 @@ pub fn basic_item_helper<'a>(is_top_parser: bool) -> impl Parser<&'a [u8], TopIt
             .map(|(a, b)| AssertionPart::Expr(a, b));
         let conn_assertion = expr_id
             .then(conn_op)
-            .then(expr_id)
+            .then_cut(expr_id)
             .then_opt(ctrl(':').then(string))
             .map(|(((a, b), c), d)| AssertionPart::Conn(a, b, c, d));
         let assertion = ctrl('{')
-            .then_cut(expr_assertion.or(conn_assertion))
-            .then(ctrl('}'))
-            .then(ctrl(';'))
-            .map(|(((a, b), c), d)| Assertion(a, b, c, d))
+            .then_cut(conn_assertion.or(expr_assertion.cut()).then(ctrl('}')).then(ctrl(';')))
+            .map(|(a, ((b, c), d))| Assertion(a, b, c, d))
             .context("assertion");
 
         let alias_conn_or_inst = alias_conn_or_inst.map(|v| match v {
@@ -921,17 +918,6 @@ pub fn basic_item_helper<'a>(is_top_parser: bool) -> impl Parser<&'a [u8], TopIt
             AliasConnOrInst::Instance(a) => TopItem::Instance(a),
         });
 
-        let base_only_items = alt((
-            // All of these start with a keyword, and so are unambiguous
-            lang_chp.map(TopItem::Chp),
-            lang_hse.map(TopItem::Hse),
-            lang_prs.map(TopItem::Prs),
-            lang_spec.map(TopItem::Spec),
-            lang_refine.map(TopItem::Refine),
-            lang_sizing.map(TopItem::Sizing),
-            lang_initialize.map(TopItem::Initialize),
-            lang_dataflow.map(TopItem::Dataflow),
-        ));
         let top_only_items = alt((
             // The all sort of start with an unambiguous keyword
             def_templated,
@@ -942,12 +928,21 @@ pub fn basic_item_helper<'a>(is_top_parser: bool) -> impl Parser<&'a [u8], TopIt
         ));
 
         let mut either_items = alt((
+            // All of these start with a keyword, and so are unambiguous
+            lang_chp.map(TopItem::Chp),
+            lang_hse.map(TopItem::Hse),
+            lang_prs.map(TopItem::Prs),
+            lang_spec.map(TopItem::Spec),
+            lang_refine.map(TopItem::Refine),
+            lang_sizing.map(TopItem::Sizing),
+            lang_initialize.map(TopItem::Initialize),
+            lang_dataflow.map(TopItem::Dataflow),
             // These each start with a unique starting symbol, so we can cut based on that token
             conditional.map(TopItem::Conditional),       // '['
-            assertion.map(TopItem::Assertion),           // '{'
             debug_output.map(TopItem::DebugOutput),      // '${'
             base_macro_loop.map(TopItem::MacroLoop),     // '('
             base_dynamic_loop.map(TopItem::DynamicLoop), // '*['
+            uncut(assertion.map(TopItem::Assertion)),    // '{'  except an expression_id can start with this too :(
             // The other three (Alias, Connection, and Instance) are harder to distinguish
             alias_conn_or_inst,
         ));
@@ -955,7 +950,7 @@ pub fn basic_item_helper<'a>(is_top_parser: bool) -> impl Parser<&'a [u8], TopIt
         if is_top_parser {
             top_only_items.or(|i| (&mut either_items).parse(i)).parse(i)
         } else {
-            base_only_items.or(|i| (&mut either_items).parse(i)).parse(i)
+            either_items.parse(i)
         }
     }
 }

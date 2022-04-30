@@ -2,10 +2,10 @@ use nom::{
     branch::alt,
     bytes::complete::{is_not, tag, take, take_until, take_while, take_while1},
     character::complete::{alpha1, alphanumeric1, char, digit1, hex_digit1, one_of},
-    combinator::{all_consuming, map, recognize, rest},
+    combinator::{all_consuming, map, opt, recognize, rest},
     error::{context, ContextError, ParseError},
     multi::{many0, many0_count, many1},
-    sequence::{delimited, pair, preceded},
+    sequence::{delimited, pair, preceded, tuple},
     IResult,
 };
 use std::str;
@@ -86,6 +86,7 @@ pub enum TokenKind {
     CtrlBackslash,
     CtrlApostrophy,
     CtrlAtSign,
+    CtrlDollarSign,
     // We also need to track whether there is a space before a given Ctrl token, so we have another copy of each name encoding that there IS NOT a leading space
     UnspacedCtrlLeftParen,
     UnspacedCtrlRightParen,
@@ -115,11 +116,12 @@ pub enum TokenKind {
     UnspacedCtrlBackslash,
     UnspacedCtrlApostrophy,
     UnspacedCtrlAtSign,
+    UnspacedCtrlDollarSign,
     // IllegalChar should be last!
     IllegalChar,
     UntermStr,
 }
-const CTRL_CHARS: &str = "()[]{};,?!.+-*/=|&~^%<>:#'@";
+const CTRL_CHARS: &str = "()[]{};,?!.+-*/=|&~^%<>:#'@$";
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Unspaced {
@@ -148,6 +150,7 @@ impl TokenKind {
             "function" => TokenKind::KwFunction,
             "hse" => TokenKind::KwHse,
             "initialize" => TokenKind::KwInitialize,
+            "Initialize" => TokenKind::KwInitialize,
             "int" => TokenKind::KwInt,
             "ints" => TokenKind::KwInts,
             "import" => TokenKind::KwImport,
@@ -211,6 +214,7 @@ impl TokenKind {
                 '\\' => CtrlBackslash,
                 '\'' => CtrlApostrophy,
                 '@' => CtrlAtSign,
+                '$' => CtrlDollarSign,
                 _ => {
                     // Currently unstable to assert in a const function :(
                     // assert!(false);
@@ -246,6 +250,7 @@ impl TokenKind {
                 '\\' => UnspacedCtrlBackslash,
                 '\'' => UnspacedCtrlApostrophy,
                 '@' => UnspacedCtrlAtSign,
+                '$' => UnspacedCtrlDollarSign,
                 _ => {
                     // Currently unstable to assert in a const function :(
                     // assert!(false);
@@ -309,6 +314,21 @@ fn padded_token<'a, E: ParseError<&'a str> + ContextError<&'a str>>(i: &'a str) 
     let int2 = map(recognize(preceded(tag("0b"), many1(one_of("01")))), |v| {
         (SimpleKind::Num, v)
     });
+    // TODO this should add support for exponential notation, and also add better error handling
+    // (because cut doesnt produce great errors)
+    let float = map(
+        recognize(tuple((
+            digit1,
+            char('.'),
+            digit1,
+            // opt(tuple((
+            //     alt((char('e'), char('E'))),
+            //     opt(alt((char('+'), char('-')))),
+            //     cut(digit1),
+            // ))),
+        ))),
+        |v| (SimpleKind::Num, v),
+    );
     let int10 = map(recognize(digit1), |v| (SimpleKind::Num, v));
     let ctrl = map(recognize(one_of(CTRL_CHARS)), |v: &'a str| {
         assert!(v.len() == 1);
@@ -317,11 +337,11 @@ fn padded_token<'a, E: ParseError<&'a str> + ContextError<&'a str>>(i: &'a str) 
 
     // TODO handle escaped character, and handle error cases
     let string = map(
-        recognize(delimited(char('"'), is_not("\"\n"), char('"'))),
+        recognize(tuple((char('"'), opt(is_not("\"\n")), char('"')))),
         |v: &'a str| (SimpleKind::Str, v),
     );
     let unterm_string = map(
-        recognize(delimited(char('"'), is_not("\"\n"), char('\n'))),
+        recognize(tuple((char('"'), opt(is_not("\"\n")), char('\n')))),
         |v: &'a str| (SimpleKind::UntermStr, v),
     );
 
@@ -339,7 +359,7 @@ fn padded_token<'a, E: ParseError<&'a str> + ContextError<&'a str>>(i: &'a str) 
     map(
         pair(
             whitespace_or_comment,
-            alt((int16, int2, int10, string, unterm_string, ctrl, ident, err_char)),
+            alt((ctrl, int16, int2, float, int10, string, unterm_string, ident, err_char)),
         ),
         |(leading_space, (kind, str_))| {
             let kind = match kind {

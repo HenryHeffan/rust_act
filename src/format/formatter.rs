@@ -121,7 +121,7 @@ impl PrAble for InstType {
 impl PrAble for FuncName {
     fn pr(&self) -> Pra {
         match self {
-            FuncName::Ident(v) => v.pr(),
+            FuncName::QualifiedName(v) => v.pr(),
             FuncName::Int(v) | FuncName::Bool(v) => v.pr(),
         }
     }
@@ -251,6 +251,19 @@ impl PrAble for Expr {
                 ))
             }
             Expr::Parened(lparen, e, rparen) => group((lparen, concat((line_(), e.pr())).nest(2), line_(), rparen)),
+            Expr::MacroLoop(lparen, (_, op), id, colon1, range, colon2, e, rparen) => group((
+                lparen,
+                op,
+                space(),
+                id,
+                colon1,
+                space(),
+                range.pr(),
+                colon2,
+                space(),
+                e.pr(),
+                rparen,
+            )),
         }
     }
 }
@@ -364,8 +377,8 @@ impl DefEnum {
 
 impl PrAble for OverrideOneSpec {
     fn pr(&self) -> Pra {
-        let OverrideOneSpec(tp, names) = self;
-        concat((tp, space(), concat_sep1(names, space())))
+        let OverrideOneSpec(tp, names, semi) = self;
+        concat((tp, space(), concat_sep1(names, space()), semi))
     }
 }
 
@@ -828,15 +841,28 @@ impl LangHse {
 impl PrAble for PrsExpr {
     fn pr(&self) -> Pra {
         match self {
-            PrsExpr::Ident(v) => v.pr(),
+            PrsExpr::Num(v) => v.pr(),
+            PrsExpr::ExprId(v) => v.pr(),
+            PrsExpr::AtIdent(at, v) => concat((at, v)),
             PrsExpr::Not(op, expr) => group((op, expr.pr())),
             PrsExpr::And(op, e1, e2) => group((e1.pr(), space(), op, line(), e2.pr())),
             PrsExpr::Or(op, e1, e2) => group((e1.pr(), space(), op, line(), e2.pr())),
-            PrsExpr::Parened(lparen, e, rparen) => group((lparen, e.pr(), rparen)).group(),
-            PrsExpr::ArrAccess(e, lbrac, range, rbrac) => {
-                concat((e.pr(), lbrac, group((line_(), range, line_(), rbrac))))
-            }
-            PrsExpr::Dot(e, dot, id) => concat((e.pr(), dot, id)),
+            PrsExpr::MacroLoop(MacroLoop(lparen, (_, ctrl), id, colon1, range, colon2, e, rparen)) => concat((
+                lparen,
+                ctrl,
+                space(),
+                id,
+                colon1,
+                space(),
+                range,
+                colon2,
+                space(),
+                e.pr(),
+                rparen,
+            )),
+            PrsExpr::Parened(lparen, e, rparen) => group((lparen, e.pr(), rparen)),
+            PrsExpr::Sized(lhs, langle, es, rangle) => group((lhs.pr(), langle, concat_sep1(es, space()), rangle)),
+            PrsExpr::Braced(lbrace, (_, dir), e, rbrace, lhs) => group((lbrace, dir, e.pr(), rbrace, lhs.pr())),
         }
     }
 }
@@ -882,37 +908,43 @@ impl PrAble for PrsItem {
                 let prefix = concat((lparen, space(), id, space(), colon1, space(), range, space(), colon2));
                 concat((prefix, space(), items, space(), rparen))
             }
-            PrsItem::Pass((_, kw), size_spec, lparen, id1, comma1, id2, comma2, id3, rparen) => concat((
-                kw,
-                space(),
-                size_spec,
-                lparen,
-                id1,
-                comma1,
-                space(),
-                id2,
-                comma2,
-                space(),
-                id3,
-                rparen,
-            )),
-            PrsItem::TransGate(kw, size_spec, lparen, id1, comma1, id2, comma2, id3, comma3, id4, rparen) => concat((
-                kw,
-                space(),
-                size_spec,
-                lparen,
-                id1,
-                comma1,
-                space(),
-                id2,
-                comma2,
-                space(),
-                id3,
-                comma3,
-                space(),
-                id4,
-                rparen,
-            )),
+            PrsItem::Pass((_, kw), size_spec, lparen, id1, comma1, id2, comma2, id3, rparen) => {
+                let size_spec = size_spec.as_ref().map_or(nil(), |size_spec| size_spec.pr());
+                concat((
+                    kw,
+                    space(),
+                    size_spec,
+                    lparen,
+                    id1,
+                    comma1,
+                    space(),
+                    id2,
+                    comma2,
+                    space(),
+                    id3,
+                    rparen,
+                ))
+            }
+            PrsItem::TransGate(kw, size_spec, lparen, id1, comma1, id2, comma2, id3, comma3, id4, rparen) => {
+                let size_spec = size_spec.as_ref().map_or(nil(), |size_spec| size_spec.pr());
+                concat((
+                    kw,
+                    space(),
+                    size_spec,
+                    lparen,
+                    id1,
+                    comma1,
+                    space(),
+                    id2,
+                    comma2,
+                    space(),
+                    id3,
+                    comma3,
+                    space(),
+                    id4,
+                    rparen,
+                ))
+            }
         }
     }
 }
@@ -1270,11 +1302,11 @@ impl PrAble for Import {
             Import::Namespace(name, val) => {
                 let name = name.pr();
                 match val {
-                    Some((arrow, id)) => concat((name, space(), arrow.pr(), line(), id)),
+                    Some((arrow, id)) => group((name, space(), arrow.pr(), line(), id)),
                     None => name,
                 }
             }
-            Import::Ident(id, arrow, id2) => concat((id, space(), arrow, line(), id2)),
+            Import::Ident(id, arrow, id2) => group((id, space(), arrow, line(), id2)),
         }
     }
 }

@@ -203,6 +203,10 @@ struct Cli {
     #[clap(short, long)]
     verbose: bool,
 
+    /// Only parse the file and check for bad syntax constructs
+    #[clap(short, long)]
+    parse_only: bool,
+
     // TODO move configuration into a separate file?
     /// maximum line width
     #[clap(short, long, default_value_t = 80)]
@@ -221,11 +225,13 @@ fn main() {
     });
     let (ast, tokens, flat_tokens, final_whitespace) = parse_and_print_errors(&src, args.verbose);
 
-    let pretty_str = print_pretty(&ast, final_whitespace, &flat_tokens, &tokens, args.width)
-        .unwrap_or("Failed to pretty-print ast".to_string());
-    match args.inplace {
-        true => fs::write(&args.path, pretty_str).expect("Failed to write file"),
-        false => println!("{}", pretty_str),
+    if !args.parse_only {
+        let pretty_str = print_pretty(&ast, final_whitespace, &flat_tokens, &tokens, args.width)
+            .unwrap_or("Failed to pretty-print ast".to_string());
+        match args.inplace {
+            true => fs::write(&args.path, pretty_str).expect("Failed to write file"),
+            false => println!("{}", pretty_str),
+        }
     }
 }
 
