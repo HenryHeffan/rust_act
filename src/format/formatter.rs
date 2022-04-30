@@ -242,8 +242,14 @@ impl PrAble for Expr {
             Expr::Dot(lhs, dot, id) => group((lhs.pr(), dot, id)),
             Expr::Call(lhs, template_params, lparen, items, rparen) => {
                 let template_params = template_params.as_ref().map_or(nil(), |v| v.pr());
-                group((lhs, template_params, lparen, concat_sep1(items, space()).nest(4), rparen))
-            },
+                group((
+                    lhs,
+                    template_params,
+                    lparen,
+                    concat_sep1(items, space()).nest(4),
+                    rparen,
+                ))
+            }
             Expr::Parened(lparen, e, rparen) => group((lparen, concat((line_(), e.pr())).nest(2), line_(), rparen)),
         }
     }
@@ -1164,25 +1170,33 @@ impl LangDataflow {
     }
 }
 
-impl BaseItem {
+impl TopItem {
     fn prc(&self) -> PraChunk {
         match self {
-            BaseItem::Instance(v) => v.prc(),
-            BaseItem::Connection(v) => v.prc(),
-            BaseItem::Alias(v) => v.prc(),
-            BaseItem::DynamicLoop(v) => v.prc(),
-            BaseItem::MacroLoop(v) => v.prc(),
-            BaseItem::Conditional(v) => v.prc(),
-            BaseItem::Assertion(v) => v.prc(),
-            BaseItem::DebugOutput(v) => v.prc(),
-            BaseItem::Chp(v) => v.prc(),
-            BaseItem::Hse(v) => v.prc(),
-            BaseItem::Prs(v) => v.prc(),
-            BaseItem::Spec(v) => v.prc(),
-            BaseItem::Refine(v) => v.prc(),
-            BaseItem::Sizing(v) => v.prc(),
-            BaseItem::Initialize(v) => v.prc(),
-            BaseItem::Dataflow(v) => v.prc(),
+            TopItem::Instance(v) => v.prc(),
+            TopItem::Connection(v) => v.prc(),
+            TopItem::Alias(v) => v.prc(),
+            TopItem::DynamicLoop(v) => v.prc(),
+            TopItem::MacroLoop(v) => v.prc(),
+            TopItem::Conditional(v) => v.prc(),
+            TopItem::Assertion(v) => v.prc(),
+            TopItem::DebugOutput(v) => v.prc(),
+            TopItem::Chp(v) => v.prc(),
+            TopItem::Hse(v) => v.prc(),
+            TopItem::Prs(v) => v.prc(),
+            TopItem::Spec(v) => v.prc(),
+            TopItem::Refine(v) => v.prc(),
+            TopItem::Sizing(v) => v.prc(),
+            TopItem::Initialize(v) => v.prc(),
+            TopItem::Dataflow(v) => v.prc(),
+            TopItem::Namespace(v) => v.prc(),
+            TopItem::Import(kw_import, import, semi) => concat((kw_import, space(), import, semi)).chunk(),
+            TopItem::Open(kw_opt, name, rename, semi) => {
+                let rename = rename.map_or(nil(), |(arrow, id)| concat((space(), arrow, space(), id)));
+                concat((kw_opt, space(), name, rename, semi)).chunk()
+            }
+            TopItem::DefTemplated(spec, def, body) => concat((spec, def, body)).chunk(),
+            TopItem::DefEnum(v) => v.prc(),
         }
     }
 }
@@ -1261,24 +1275,6 @@ impl PrAble for Import {
                 }
             }
             Import::Ident(id, arrow, id2) => concat((id, space(), arrow, line(), id2)),
-        }
-    }
-}
-
-impl TopItem {
-    fn prc(&self) -> PraChunk {
-        match self {
-            TopItem::Namespace(v) => v.prc(),
-            TopItem::Import(kw_import, import, semi) => concat((kw_import, space(), import, semi)).chunk(),
-            TopItem::Open(kw_opt, name, rename, semi) => {
-                let rename = rename.map_or(nil(), |(arrow, id)| concat((space(), arrow, space(), id)));
-                concat((kw_opt, space(), name, rename, semi)).chunk()
-            }
-            TopItem::DefTemplated(spec, def, body) => concat((spec, def, body)).chunk(),
-            TopItem::DefEnum(v) => v.prc(),
-            TopItem::Alias(v) => v.prc(),
-            TopItem::Connection(v) => v.prc(),
-            TopItem::Instance(v) => v.prc(),
         }
     }
 }

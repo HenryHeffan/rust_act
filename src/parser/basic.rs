@@ -167,7 +167,13 @@ pub mod ast {
         Query(Box<Self>, CtrlQMark, Box<Self>, CtrlColon, Box<Self>),
         Concat(CtrlLBrace, SepList1<Self, CtrlComma>, CtrlRBrace),
         Dot(Box<Self>, CtrlDot, Ident),
-        Call(FuncName, Option<FuncTemplateParams>, CtrlLParen, SepList1<Self, CtrlComma>, CtrlRParen),
+        Call(
+            FuncName,
+            Option<FuncTemplateParams>,
+            CtrlLParen,
+            SepList1<Self, CtrlComma>,
+            CtrlRParen,
+        ),
         Parened(CtrlLParen, Box<Self>, CtrlRParen),
     }
     pub type ArrayedExprs = Arrayed<Expr>;
@@ -480,14 +486,23 @@ pub fn dir(i: &[u8]) -> IResult<&[u8], (Dir, Ctrl), ET> {
     alt((ctrl('+').map(|v| (Dir::Plus, v)), ctrl('-').map(|v| (Dir::Minus, v)))).parse(i)
 }
 
-fn unary_rec<'a, F>(expr: F) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Expr, ET>
+#[derive(Clone, Copy)]
+struct UnaryExprRecParser<F: Clone + Copy> {
+    expr: F,
+}
+
+impl<'a, F> Parser<&'a [u8], Expr, ET<'a>> for UnaryExprRecParser<F>
 where
-    F: Fn(&'a [u8]) -> IResult<&'a [u8], Expr, ET>,
+    F: Parser<&'a [u8], Expr, ET<'a>> + Clone + Copy,
 {
-    move |i| {
+    #[inline]
+    fn parse(&mut self, i: &'a [u8]) -> IResult<&'a [u8], Expr, ET<'a>>
+    where
+        F: Parser<&'a [u8], Expr, ET<'a>> + Clone + Copy,
+    {
         // 'Atoms' are expressions that contain no ambiguity
         let concat = ctrl('{')
-            .then_cut((&expr).list1_sep_by(ctrl(',')).term_by(ctrl('}')))
+            .then_cut((&self.expr).list1_sep_by(ctrl(',')).term_by(ctrl('}')))
             .map(|(a, (b, c))| Expr::Concat(a, b, c));
 
         let func_name = alt((
@@ -495,14 +510,16 @@ where
             kw("bool").map(FuncName::Bool),
             ident.map(FuncName::Ident),
         ));
-        let template_params = ctrl('<').then_cut(expr_no_gt.list1_sep_by(ctrl(',')).term_by(ctrl('>'))).map(|(a, (b,c))| FuncTemplateParams(a,b,c));
+        let template_params = ctrl('<')
+            .then_cut(expr_no_gt.list1_sep_by(ctrl(',')).term_by(ctrl('>')))
+            .map(|(a, (b, c))| FuncTemplateParams(a, b, c));
         let func_call = func_name
-            .then_opt(template_params
-
-            )
+            .then_opt(template_params)
             .then(ctrl('('))
-            .then_cut((&expr).list1_sep_by(ctrl(',')).term_by(ctrl(')')))
-            .map(|(((name, template_params), lparen), (args, rparen))| Expr::Call(name, template_params,lparen, args, rparen));
+            .then_cut((&self.expr).list1_sep_by(ctrl(',')).term_by(ctrl(')')))
+            .map(|(((name, template_params), lparen), (args, rparen))| {
+                Expr::Call(name, template_params, lparen, args, rparen)
+            });
 
         let atom = alt((
             num.map(Expr::Num),
@@ -510,9 +527,8 @@ where
             uncut(func_call),
             ident.map(Expr::Ident), // TODO support qualified names?
             ctrl('(')
-                .then_cut(&expr)
-                .then(ctrl(')'))
-                .map(|((a, b), c)| Expr::Parened(a, Box::new(b), c)),
+                .then_cut((&self.expr).then(ctrl(')')))
+                .map(|(a, (b, c))| Expr::Parened(a, Box::new(b), c)),
             concat,
         ));
 
@@ -527,8 +543,8 @@ where
 
         let arr_access = ctrl1_not_ctrl2('[', ']')
             .then_cut(
-                (&expr)
-                    .then_opt(peek(ctrl('.')).ignore_then_cut(ctrl2('.', '.').then((&expr).map(Box::new))))
+                (&self.expr)
+                    .then_opt(peek(ctrl('.')).ignore_then_cut(ctrl2('.', '.').then((&self.expr).map(Box::new))))
                     .then(ctrl(']')),
             )
             .map(|(a, ((b, c), d))| AccessKind::Arr(a, b, c, d));
@@ -553,8 +569,8 @@ where
         let bitfield = access
             .then_opt(
                 ctrl('{').then_cut(
-                    (&expr)
-                        .then_opt(peek(ctrl('.')).ignore_then_cut(ctrl2('.', '.').then((&expr).map(Box::new))))
+                    (&self.expr)
+                        .then_opt(peek(ctrl('.')).ignore_then_cut(ctrl2('.', '.').then((&self.expr).map(Box::new))))
                         .then(ctrl('}')),
                 ),
             )
@@ -577,21 +593,26 @@ where
     }
 }
 
-fn binary_rec<'a, F, G>(expr: F, infix_binary_ops: G) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Expr, ET>
+#[derive(Clone, Copy)]
+struct BinaryExprRecParser<F: Clone + Copy, G: Clone + Copy> {
+    unary_expr: F,
+    infix_binary_ops: G,
+}
+
+impl<'a, F, G> Parser<&'a [u8], Expr, ET<'a>> for BinaryExprRecParser<F, G>
 where
-    F: Fn(&'a [u8]) -> IResult<&'a [u8], Expr, ET>,
-    G: Fn(&'a [u8]) -> IResult<&'a [u8], (BinaryOp, Ctrl), ET>,
+    F: Parser<&'a [u8], Expr, ET<'a>> + Clone + Copy,
+    G: Parser<&'a [u8], (BinaryOp, Ctrl), ET<'a>> + Clone + Copy,
 {
-    move |i| {
+    fn parse(&mut self, i: &'a [u8]) -> IResult<&'a [u8], Expr, ET<'a>> {
         // In order to make it compile in a reasonable amount of time, we do binary operator parsing in two steps.
         // First we parse a chain of binary operators, and then we parse the precidence within the chains
-
-        unary_rec(&expr)
+        (self.unary_expr)
             .then(
-                (&infix_binary_ops)
-                    .then(unary_rec(&expr))
+                (self.infix_binary_ops)
+                    .then(self.unary_expr)
                     .many0()
-                    .term_by_peek_not(&infix_binary_ops),
+                    .term_by_peek_not(infix_binary_ops),
             )
             .map(|(n0, ns)| {
                 // this bit of code is gross as it uses a mutable algorithm. It scans over the list [node0, nodes[0], nodes[1], ...]
@@ -632,21 +653,27 @@ where
     }
 }
 
-fn query_rec<'a, F, G>(expr: F, infix_binary_ops: G) -> impl Fn(&'a [u8]) -> IResult<&'a [u8], Expr, ET>
+struct ExprParser<F: Clone + Copy, G: Clone + Copy> {
+    expr: F,
+    infix_binary_ops: G,
+}
+
+impl<'a, F, G> Parser<&'a [u8], Expr, ET<'a>> for ExprParser<F, G>
 where
-    F: Fn(&'a [u8]) -> IResult<&'a [u8], Expr, ET>,
-    G: Fn(&'a [u8]) -> IResult<&'a [u8], (BinaryOp, Ctrl), ET>,
+    F: Parser<&'a [u8], Expr, ET<'a>> + Clone + Copy,
+    G: Parser<&'a [u8], (BinaryOp, Ctrl), ET<'a>> + Clone + Copy,
 {
-    move |i| {
+    fn parse(&mut self, i: &'a [u8]) -> IResult<&'a [u8], Expr, ET<'a>> {
+        let binary_op = BinaryExprRecParser {
+            unary_expr: UnaryExprRecParser { expr: self.expr },
+            infix_binary_ops: self.infix_binary_ops,
+        };
         // handles `a ? b : c ? d : e` as `a ? b : (c ? d : e)`
-        binary_rec(&expr, &infix_binary_ops)
+        binary_op
             .then(
-                (ctrl('?')
-                    .then(binary_rec(&expr, &infix_binary_ops))
-                    .then(ctrl(':'))
-                    .then(binary_rec(&expr, &infix_binary_ops)))
-                .many0()
-                .term_by_peek_not(ctrl('?')),
+                (ctrl('?').then(|i| self.parse(i)).then(ctrl(':')).then(binary_op))
+                    .many0()
+                    .term_by_peek_not(ctrl('?')),
             )
             .map(|(sel0, nodes)| {
                 let (v1s, mut sels): (Vec<((Ctrl /* ? */, Expr), Ctrl /* : */)>, Vec<Expr>) = nodes.into_iter().unzip();
@@ -720,11 +747,16 @@ fn infix_binary_ops_no_gt(i: &[u8]) -> IResult<&[u8], (BinaryOp, Ctrl), ET> {
 }
 
 pub fn expr(i: &[u8]) -> IResult<&[u8], Expr, ET> {
-    query_rec(expr, infix_binary_ops).context("expr").parse(i)
+    ExprParser { expr, infix_binary_ops }.context("expr").parse(i)
 }
 
 pub fn expr_no_gt(i: &[u8]) -> IResult<&[u8], Expr, ET> {
-    query_rec(expr, infix_binary_ops_no_gt).context("expr no gt").parse(i)
+    ExprParser {
+        expr,
+        infix_binary_ops: infix_binary_ops_no_gt,
+    }
+    .context("expr no gt")
+    .parse(i)
 }
 
 pub fn expr_range(i: &[u8]) -> IResult<&[u8], ExprRange, ET> {

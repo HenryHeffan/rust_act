@@ -107,9 +107,9 @@ pub mod ast {
 
     #[derive(Debug)]
     pub enum GuardedClause {
-        Expr(Expr, CtrlLArrow, Vec<BaseItem>),
-        Else(Kw, CtrlLArrow, Vec<BaseItem>),
-        MacroLoop(MacroLoop<Ctrl /* [] */, (Expr, CtrlLArrow, Vec<BaseItem>)>),
+        Expr(Expr, CtrlLArrow, Vec<TopItem>),
+        Else(Kw, CtrlLArrow, Vec<TopItem>),
+        MacroLoop(MacroLoop<Ctrl /* [] */, (Expr, CtrlLArrow, Vec<TopItem>)>),
     }
 
     #[derive(Debug)]
@@ -148,31 +148,10 @@ pub mod ast {
     );
 
     #[derive(Debug)]
-    pub struct BaseMacroLoop(pub MacroLoop<Option<CtrlSemi>, Vec<BaseItem>>);
+    pub struct BaseMacroLoop(pub MacroLoop<Option<CtrlSemi>, Vec<TopItem>>);
 
     #[derive(Debug)]
-    pub enum BaseItem {
-        Instance(Instance),
-        Connection(Connection),
-        Alias(Alias),
-        DynamicLoop(BaseDynamicLoop),
-        MacroLoop(BaseMacroLoop),
-        Conditional(Conditional),
-        Assertion(Assertion),
-        DebugOutput(DebugOutput),
-        // language bodies
-        Chp(LangChp),
-        Hse(LangHse),
-        Prs(LangPrs),
-        Spec(LangSpec),
-        Refine(LangRefine),
-        Sizing(LangSizing),
-        Initialize(LangInitialize),
-        Dataflow(LangDataflow),
-    }
-
-    #[derive(Debug)]
-    pub struct LangRefine(pub Kw, pub CtrlLBrace, pub Vec<BaseItem>, pub CtrlRBrace);
+    pub struct LangRefine(pub Kw, pub CtrlLBrace, pub Vec<TopItem>, pub CtrlRBrace);
 
     // Types for "top level" items
 
@@ -185,16 +164,30 @@ pub mod ast {
 
     #[derive(Debug)]
     pub enum TopItem {
+        // These are used by both "TopItem" and "BaseItem"
+        Instance(Instance),
+        Connection(Connection),
+        Alias(Alias),
+        DynamicLoop(BaseDynamicLoop),
+        MacroLoop(BaseMacroLoop),
+        Conditional(Conditional),
+        Assertion(Assertion),
+        DebugOutput(DebugOutput),
+        // These are used by top items
         Namespace(NamespaceDecl),
         Import(Kw, Import, CtrlSemi),
         Open(Kw, QualifiedName, Option<(CtrlLArrow, Ident)>, CtrlSemi),
-        // These together compose the set of "definitions". Maybe they should be merged?
         DefTemplated(OptTemplateSpec, ProclikeDecl, ProclikeBody),
         DefEnum(DefEnum),
-        // Alias, Connection,Instance are the only ones shared with "BaseItem"
-        Alias(Alias),
-        Connection(Connection),
-        Instance(Instance),
+        // These are used by base items
+        Chp(LangChp),
+        Hse(LangHse),
+        Prs(LangPrs),
+        Spec(LangSpec),
+        Refine(LangRefine),
+        Sizing(LangSizing),
+        Initialize(LangInitialize),
+        Dataflow(LangDataflow),
     }
 
     #[derive(Debug)]
@@ -286,7 +279,7 @@ pub mod ast {
         WithBody(
             Option<OverrideSpec>,
             CtrlLBrace,
-            Vec<BaseItem>,
+            Vec<TopItem>,
             Option<MethodsBody>,
             CtrlRBrace,
         ),
@@ -615,94 +608,6 @@ where
             .parse(i)
     }
 }
-pub fn base_item(i: &[u8]) -> IResult<&[u8], BaseItem, ET> {
-    // NOTE: It is important that `[]` and `]` are both invalid starts to base items
-    let conditional_gc = guarded_clause(ctrl2('[', ']'), ctrl(']'));
-    let conditional = ctrl('[')
-        .then_cut(conditional_gc.list1_sep_by(ctrl2('[', ']')).term_by(ctrl(']')))
-        .map(|(a, (b, c))| Conditional(a, b, c));
-
-    let base_macro_loop = ctrl('(')
-        .then_cut(tuple((
-            ctrl(';').opt(),
-            ident,
-            ctrl(':'),
-            expr_range,
-            ctrl(':'),
-            base_item.many1().term_by(ctrl(')')),
-        )))
-        .map(|(a, (b, c, d, e, f, (g, h)))| MacroLoop(a, b, c, d, e, f, g, h))
-        .map(BaseMacroLoop)
-        .context("macro loop");
-
-    let dynamic_loop_gc = guarded_clause(ctrl2('[', ']'), ctrl(']'));
-    let dynamic_loop_body = dynamic_loop_gc.list1_sep_by(ctrl2('[', ']'));
-    let base_dynamic_loop = ctrl2('*', '[')
-        .then_cut(dynamic_loop_body.term_by(ctrl(']')))
-        .map(|(a, (b, c))| BaseDynamicLoop(a, b, c))
-        .context("dynamic loop");
-
-    let debug_output = ctrl2('$', '{')
-        .then_cut(expr_or_str.list1_sep_by(ctrl(',')).term_by(ctrl('}')))
-        .then(ctrl(';'))
-        .map(|((a, (b, c)), d)| DebugOutput(a, b, c, d));
-
-    let conn_op = alt((
-        ctrl3('=', '=', '=').map(ConnOp::Equal),
-        ctrl3('!', '=', '=').map(ConnOp::NotEqual),
-    ));
-    let expr_assertion = expr
-        .then_opt(ctrl(':').then(string))
-        .map(|(a, b)| AssertionPart::Expr(a, b));
-    let conn_assertion = expr_id
-        .then(conn_op)
-        .then(expr_id)
-        .then_opt(ctrl(':').then(string))
-        .map(|(((a, b), c), d)| AssertionPart::Conn(a, b, c, d));
-    let assertion = ctrl('{')
-        .then_cut(expr_assertion.or(conn_assertion))
-        .then(ctrl('}'))
-        .then(ctrl(';'))
-        .map(|(((a, b), c), d)| Assertion(a, b, c, d))
-        .context("assertion");
-
-    let alias_conn_or_inst = alias_conn_or_inst.map(|v| match v {
-        AliasConnOrInst::Alias(a) => BaseItem::Alias(a),
-        AliasConnOrInst::Connection(a) => BaseItem::Connection(a),
-        AliasConnOrInst::Instance(a) => BaseItem::Instance(a),
-    });
-
-    alt((
-        // All of these start with a keyword, and so are unambiguous
-        lang_chp.map(BaseItem::Chp),
-        lang_hse.map(BaseItem::Hse),
-        lang_prs.map(BaseItem::Prs),
-        lang_spec.map(BaseItem::Spec),
-        lang_refine.map(BaseItem::Refine),
-        lang_sizing.map(BaseItem::Sizing),
-        lang_initialize.map(BaseItem::Initialize),
-        lang_dataflow.map(BaseItem::Dataflow),
-        // These each start with a unique starting symbol, so we can cut based on that token
-        conditional.map(BaseItem::Conditional),       // '['
-        assertion.map(BaseItem::Assertion),           // '{'
-        debug_output.map(BaseItem::DebugOutput),      // '${'
-        base_macro_loop.map(BaseItem::MacroLoop),     // '('
-        base_dynamic_loop.map(BaseItem::DynamicLoop), // '*['
-        // The other three (Alias, Connection, and Instance) are harder to distinguish
-        alias_conn_or_inst,
-    ))
-    .context("base item")
-    .parse(i)
-}
-
-// lang_refine: "refine" "{" base_item_list "}"
-pub fn lang_refine(i: &[u8]) -> IResult<&[u8], LangRefine, ET> {
-    kw("refine")
-        .then_cut(base_item.many1().braced())
-        .map(|(a, (b, c, d))| LangRefine(a, b, c, d))
-        .context("lang refine")
-        .parse(i)
-}
 
 /*
     // def_or_proc: {excl}
@@ -864,6 +769,15 @@ fn proclike_decl(i: &[u8]) -> IResult<&[u8], ProclikeDecl, ET> {
         .parse(i)
 }
 
+// lang_refine: "refine" "{" base_item_list "}"
+pub fn lang_refine(i: &[u8]) -> IResult<&[u8], LangRefine, ET> {
+    kw("refine")
+        .then_cut(base_item.many1().braced())
+        .map(|(a, (b, c, d))| LangRefine(a, b, c, d))
+        .context("lang refine")
+        .parse(i)
+}
+
 fn def_templated(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
     let opt_templated_spec = kw("export")
         .opt()
@@ -948,17 +862,111 @@ fn open(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
         .parse(i)
 }
 
-pub fn top_item(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
-    let alias_conn_or_inst = alias_conn_or_inst.map(|v| match v {
-        AliasConnOrInst::Alias(a) => TopItem::Alias(a),
-        AliasConnOrInst::Connection(a) => TopItem::Connection(a),
-        AliasConnOrInst::Instance(a) => TopItem::Instance(a),
-    });
+#[inline]
+pub fn basic_item_helper<'a>(is_top_parser: bool) -> impl Parser<&'a [u8], TopItem, ET<'a>> {
+    move |i: &'a [u8]| {
+        // NOTE: It is important that `[]` and `]` are both invalid starts to base items
+        let conditional_gc = guarded_clause(ctrl2('[', ']'), ctrl(']'));
+        let conditional = ctrl('[')
+            .then_cut(conditional_gc.list1_sep_by(ctrl2('[', ']')).term_by(ctrl(']')))
+            .map(|(a, (b, c))| Conditional(a, b, c));
 
-    alt((def_templated, def_enum, new_namespace, alias_conn_or_inst, import, open))
-        .context("top level item")
-        .parse(i)
+        let base_macro_loop = ctrl('(')
+            .then_cut(tuple((
+                ctrl(';').opt(),
+                ident,
+                ctrl(':'),
+                expr_range,
+                ctrl(':'),
+                base_item.many1().term_by(ctrl(')')),
+            )))
+            .map(|(a, (b, c, d, e, f, (g, h)))| MacroLoop(a, b, c, d, e, f, g, h))
+            .map(BaseMacroLoop)
+            .context("macro loop");
+
+        let dynamic_loop_gc = guarded_clause(ctrl2('[', ']'), ctrl(']'));
+        let dynamic_loop_body = dynamic_loop_gc.list1_sep_by(ctrl2('[', ']'));
+        let base_dynamic_loop = ctrl2('*', '[')
+            .then_cut(dynamic_loop_body.term_by(ctrl(']')))
+            .map(|(a, (b, c))| BaseDynamicLoop(a, b, c))
+            .context("dynamic loop");
+
+        let debug_output = ctrl2('$', '{')
+            .then_cut(expr_or_str.list1_sep_by(ctrl(',')).term_by(ctrl('}')))
+            .then(ctrl(';'))
+            .map(|((a, (b, c)), d)| DebugOutput(a, b, c, d));
+
+        let conn_op = alt((
+            ctrl3('=', '=', '=').map(ConnOp::Equal),
+            ctrl3('!', '=', '=').map(ConnOp::NotEqual),
+        ));
+        let expr_assertion = expr
+            .then_opt(ctrl(':').then(string))
+            .map(|(a, b)| AssertionPart::Expr(a, b));
+        let conn_assertion = expr_id
+            .then(conn_op)
+            .then(expr_id)
+            .then_opt(ctrl(':').then(string))
+            .map(|(((a, b), c), d)| AssertionPart::Conn(a, b, c, d));
+        let assertion = ctrl('{')
+            .then_cut(expr_assertion.or(conn_assertion))
+            .then(ctrl('}'))
+            .then(ctrl(';'))
+            .map(|(((a, b), c), d)| Assertion(a, b, c, d))
+            .context("assertion");
+
+        let alias_conn_or_inst = alias_conn_or_inst.map(|v| match v {
+            AliasConnOrInst::Alias(a) => TopItem::Alias(a),
+            AliasConnOrInst::Connection(a) => TopItem::Connection(a),
+            AliasConnOrInst::Instance(a) => TopItem::Instance(a),
+        });
+
+        let base_only_items = alt((
+            // All of these start with a keyword, and so are unambiguous
+            lang_chp.map(TopItem::Chp),
+            lang_hse.map(TopItem::Hse),
+            lang_prs.map(TopItem::Prs),
+            lang_spec.map(TopItem::Spec),
+            lang_refine.map(TopItem::Refine),
+            lang_sizing.map(TopItem::Sizing),
+            lang_initialize.map(TopItem::Initialize),
+            lang_dataflow.map(TopItem::Dataflow),
+        ));
+        let top_only_items = alt((
+            // The all sort of start with an unambiguous keyword
+            def_templated,
+            def_enum,
+            new_namespace,
+            import,
+            open,
+        ));
+
+        let mut either_items = alt((
+            // These each start with a unique starting symbol, so we can cut based on that token
+            conditional.map(TopItem::Conditional),       // '['
+            assertion.map(TopItem::Assertion),           // '{'
+            debug_output.map(TopItem::DebugOutput),      // '${'
+            base_macro_loop.map(TopItem::MacroLoop),     // '('
+            base_dynamic_loop.map(TopItem::DynamicLoop), // '*['
+            // The other three (Alias, Connection, and Instance) are harder to distinguish
+            alias_conn_or_inst,
+        ));
+
+        if is_top_parser {
+            top_only_items.or(|i| (&mut either_items).parse(i)).parse(i)
+        } else {
+            base_only_items.or(|i| (&mut either_items).parse(i)).parse(i)
+        }
+    }
 }
+
+pub fn base_item(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
+    basic_item_helper(false).context("top level item").parse(i)
+}
+pub fn top_item(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
+    basic_item_helper(true).context("top level item").parse(i)
+}
+
 pub fn top_level(i: &[u8]) -> nom::IResult<&[u8], Vec<TopItem>, ET> {
     top_item
         .many0()
