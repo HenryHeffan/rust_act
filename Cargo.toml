@@ -7,22 +7,25 @@ edition = "2018"
 members = [
     "lex_parse",
     "act_fmt",
+    "symantics"
 ]
 
 [[bin]]
 name = "act-fmt"
-path = "src/main.rs"
+path = "bin/act_fmt.rs"
+
+[[bin]]
+name = "act++"
+path = "bin/act++.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-lex_parse = { path = "lex_parse" }
-act_fmt = { path = "act_fmt" }
 ariadne = "0.1.2"
 clap = { version = "3.1.12", features = ["derive"] }
-
-nom = "7"
-nom-supreme = "0.6.0"
+act_fmt = { path = "act_fmt" }
+lex_parse = { path = "lex_parse" }
+symantics = { path = "symantics" }
 
 [profile.release]
 lto = true

@@ -6,6 +6,7 @@
       <sourceFolder url="file://$MODULE_DIR$/lex_parse/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/act_fmt/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/symantics/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />
