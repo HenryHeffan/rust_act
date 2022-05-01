@@ -434,7 +434,78 @@ mod lang_chp_hse {
             .context("do loop");
 
         // at most one of these should succeed. If more do, raise an error! Otherwise, return the successful one
-        alt((uncut(wait), uncut(do_loop), uncut(loop_))).parse(i)
+        let result = alt((uncut(wait), uncut(do_loop), uncut(loop_))).parse(i);
+
+        // Now we do the grossest part of parsing. In a do-loop, the guard is preceded by `<-`. However,
+        // if someone writes `*[ A:=B<-C ]`, it is honestly not clear whether they mean `*[ A:= B; skip <- C ]`
+        // or if they mean `*[ A:= (B  <- C) ]`. The parses we have written a greedy, and so will parse
+        // it as `*[ A:= (B  <- C) ]`.
+        //
+        // Unfortunately, the Act library currently parses this as `*[ A:= B; skip <- C ]`, so we must
+        // also. To do some, we do a bit of a hack. If we parsed a do-loop above with no guard, we
+        // parse the longest guard expression we can among the tokens used in the final expression.
+        // Then, we parse all the remaining tokens as a do-loop again (without the final terminator)
+        // and return that.
+
+        match result {
+            Ok((ii, bracketed)) => {
+                match bracketed {
+                    ChpBracketedStmt::DoLoop(open_bracket, items, oexpr, close_bracket) => {
+                        match oexpr {
+                            Some((_, _)) => Ok((ii, ChpBracketedStmt::DoLoop(open_bracket, items, oexpr, close_bracket))),
+                            None => {
+                                // then we dont have a guard, but maybe we should
+                                assert_ne!(items.0.items.len(), 0);
+                                let ctrl_before = match items.0.items.last().unwrap().seps.last() {
+                                    Some(last_comma) => last_comma,
+                                    None => match items.0.seps.last() {
+                                        Some(last_semi) => last_semi,
+                                        None => &open_bracket
+                                    }
+                                };
+                                // this should never be at the end of a successfully parsed file (need e.g. the closing brace on the chp block)
+                                assert_ne!(ii.len(), 0);
+                                let start_offset = ctrl_before.ft_ptr_last();
+                                let end_offset = FTPtr::of_ptr(&ii[0]);
+                                // last_ii holds the input in the final chp statement
+                                let last_ii = &i[i.len() - ii.len() - FTPtr::offset_between(&start_offset, &end_offset)+1..i.len() - ii.len() - 1];
+
+                                // then, scan through the list for any potential guard symbols, and try
+                                // parsing around each, starting with the left-most one
+                                let split = (0..last_ii.len() - 1).into_iter().filter(|i|
+                                    ctrl2('<', '-').parse(&last_ii[*i..i+2]).is_ok()
+                                ).find_map(|i| {
+                                    let r1 = chp_item.complete().parse(&last_ii[0..i]);
+                                    let r2 = expr.complete().parse(&last_ii[i+2..last_ii.len()]);
+                                    if r1.is_ok() && r2.is_ok() {
+                                        let c = ctrl2('<', '-').parse(&last_ii[i..i+2]);
+                                        Some((r1.unwrap().1, c.unwrap().1, r2.unwrap().1))
+                                    } else {
+                                        None
+                                    }
+                                });
+
+                                match split {
+                                    None => Ok((ii, ChpBracketedStmt::DoLoop(open_bracket, items, oexpr, close_bracket))),
+                                    Some((item, arrow, expr)) => {
+
+                                        let mut items = items;
+                                        let ln = items.0.items.len()-1;
+                                        let last_comma_list = &mut items.0.items[ln];
+                                        let ln = last_comma_list.items.len()-1;
+                                        last_comma_list.items[ln]= item;
+
+                                        Ok((ii, ChpBracketedStmt::DoLoop(open_bracket, items, Some((arrow, expr)), close_bracket)))
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    e => Ok((ii, e))
+                }
+            },
+            e => e
+        }
     }
 
     // hse_bodies: hse_body
@@ -1044,7 +1115,7 @@ mod lang_initialize {
     use super::{
         *,
         lang_chp_hse::{ast::HseItemList, hse_body},
-        };
+    };
 
     pub mod ast {
         use crate::utils::SepList1;

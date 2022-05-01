@@ -162,6 +162,73 @@ pub fn parse(data: &str) -> LexParseResult {
     )
 }
 
+// Check for the minimum set of errors needed to ensure an unambiguous parse. All other errors should
+// be detected during semantic analysis. At the moment, there are two things that we check for here.
+//
+// First, we check that in a do-loop, the sequence of characters `<-` does not appear in the final
+// expression (since by default `*[ A:=B<-C ]`) parses as `*[ A := B < (-C) ])
+//
+// Then we check that `A = B & C` has parenticies to be either `(A = B) & C` or `A = (B & C)`,
+// since by default this parses as `(A = B) & C`, but sometime people mean the opposite
+//
+// pub fn extract_ambiguous_r_arrows(ast: &Vec<TopItem>) -> () {
+//     enum AllowRArrow { Yes, No }
+//
+//     use ast::*;
+//     fn visit_top_item(item: &TopItem) -> () {
+//         match item {
+//             TopItem::Namespace(NamespaceDecl(_,_,_,_,items,_)) => items.iter().for_each(visit_top_item),
+//             TopItem::Chp(LangChp(_,_,_,items,_)) => items.iter().map(|items|visit_chp_item_list(items, AllowRArrow::Yes)),
+//             TopItem::Hse(LangHse(_,_,_,bodies,_)) => bodies.iter().map(|bodies| match bodies {
+//                 HseBodies::Body(items) => visit_chp_item_list(&items.0, AllowRArrow::Yes),
+//                 HseBodies::Labeled(bodies) => bodies.items.iter().for_each(|LabeledHseBody(_, _, items,_, _)| visit_chp_item_list(&items.0, AllowRArrow::Yes))
+//             }),
+//             _ => {}
+//         }
+//     }
+//     fn visit_chp_item_list(item: &ChpItemList, allow_r_arrow: BracketingKind) -> () {
+//         use ChpStmt::*;
+//         item.0.items.iter().map(|items| items.items.iter().map(
+//             |item| match &item.1 {
+//                 Assign(AssignStmt(_,_,e)) |SendStmt(e) |RecvStmt(e) => {
+//
+//                 }
+//                 AssignBoolDir(_) |Skip(_)  => {}
+//                 DottedCall(_, _, _, _, _, _) |FuncCall(_, _, _, _)| MacroLoop(_) => {}
+//                 ParenedBody(_, items, _) => visit_chp_item_list(items, AllowRArrow::Yes),
+//                 BracketedStmt(stmt) => match stmt {
+//                     ChpBracketedStmt::DetermSelect(_, items, _) |
+//                     ChpBracketedStmt::NonDetermSelect(_,items, _) |
+//                     ChpBracketedStmt::WhileLoop(_, items, _) => {
+//                         items.items.iter().map(| cmd|{
+//                             visit_chp_guarded_cmd(cmd, AllowRArrow::Yes);
+//                         });
+//                     }
+//                     ChpBracketedStmt::DoLoop(_, items, expr, _) => {
+//                         visit_chp_item_list(items, AllowRArrow::No);
+//                         expr.iter().map(|(_, expr)| visit_expr(expr, AllowRArrow::No))
+//                     }
+//                     ChpBracketedStmt::Wait(_, expr, _) => {
+//                         visit_expr(expr, AllowRArrow::No);
+//                     }
+//                 }
+//             }
+//         ));
+//     }
+//     fn visit_chp_guarded_cmd(cmd: &GuardedCmd, allow_r_arrow: AllowRArrow) -> () {
+//             match &cmd {
+//                 GuardedCmd::Expr(_, _, items)  |
+//                 GuardedCmd::Else(_, _, items) |
+//                 GuardedCmd::Macro(_, _, _, _, _, _, _, _, items, _) => {
+//                     visit_chp_item_list(items, allow_r_arrow)
+//                 }
+//             }
+//     }
+//     fn visit_expr(e: &Expr, allow_r_arrow: AllowRArrow) -> () {
+//
+//     }
+//     ast.iter().for_each(|v| visit_top_item(v))
+// }
 
 #[cfg(test)]
 mod tests {

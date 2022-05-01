@@ -15,8 +15,8 @@ name = "act-fmt"
 path = "bin/act_fmt.rs"
 
 [[bin]]
-name = "act++"
-path = "bin/act++.rs"
+name = "act-pp"
+path = "bin/act_pp.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -28,5 +28,5 @@ lex_parse = { path = "lex_parse" }
 symantics = { path = "symantics" }
 
 [profile.release]
-lto = true
-strip = true
+#lto = true
+#strip = true

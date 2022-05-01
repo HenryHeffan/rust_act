@@ -27,6 +27,9 @@ pub mod ast {
                 ptr: ft as *const u8 as usize,
             }
         }
+        pub fn offset_between(begin: &FTPtr, end:&FTPtr) -> usize {
+            end.ptr - begin.ptr
+        }
         pub fn dummy() -> FTPtr {
             FTPtr { ptr: 0 }
         }
@@ -61,6 +64,16 @@ pub mod ast {
         Ctrl(FTPtr),
         Ctrl2(FTPtr, FTPtr),
         Ctrl3(FTPtr, FTPtr, FTPtr),
+    }
+
+    impl Ctrl {
+        pub fn ft_ptr_last(&self) -> FTPtr {
+            match self {
+                Ctrl::Ctrl(c) |
+                Ctrl::Ctrl2(_, c) |
+                Ctrl::Ctrl3(_, _, c) => *c
+            }
+        }
     }
 
     pub type CtrlEquals = Ctrl;
