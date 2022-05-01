@@ -583,20 +583,19 @@ where
                 ctrl('<')
                     .then(expr_no_gt.list1_sep_by(ctrl(',')).term_by(ctrl('>')))
                     .then(ctrl('('))
-                    .then(
-                        (&self.expr).list1_sep_by(ctrl(','))
-                            .term_by(ctrl(')'))
-                    ),
+                    .then((&self.expr).list1_sep_by(ctrl(',')).term_by(ctrl(')'))),
             )
-            .map(|(name, (((langle,(template_params,rangle)),lparen),(args,rparen)))| {
-                Expr::Call(
-                    name,
-                    Some(FuncTemplateParams(langle, template_params, rangle)),
-                    lparen,
-                    args,
-                    rparen,
-                )
-            });
+            .map(
+                |(name, (((langle, (template_params, rangle)), lparen), (args, rparen)))| {
+                    Expr::Call(
+                        name,
+                        Some(FuncTemplateParams(langle, template_params, rangle)),
+                        lparen,
+                        args,
+                        rparen,
+                    )
+                },
+            );
 
         let macro_loop_op = alt((
             ctrl('*').map(|v| (BinaryOp::Mul, v)),

@@ -711,11 +711,11 @@ fn proclike_body(i: &[u8]) -> IResult<&[u8], ProclikeBody, ET> {
         .then(ident.list1_sep_by(ctrl(',')).term_by(ctrl(';')))
         .map(|(a, (b, c))| OverrideOneSpec(a, b, c));
     let overrides_block = ctrl2('+', '{')
-        .then_cut(one_override.many1().term_by(ctrl('}')))
+        .then_cut(one_override.many0().term_by(ctrl('}')))
         .map(|(a, (b, c))| OverrideSpec(a, b, c));
 
     let methods_body = kw("methods")
-        .then_cut(method.many1().braced())
+        .then_cut(method.many0().braced())
         .map(|(a, (b, c, d))| MethodsBody(a, b, c, d));
 
     // after the base items, either there is a methods_body next (begining with kw `methods`), or there is a close brace

@@ -9,6 +9,9 @@ use std::str;
 
 // https://docs.rs/pretty/latest/pretty/
 
+#[derive(Clone, Copy, Debug)]
+pub struct NestAmt(pub usize);
+
 #[derive(Clone, Debug)]
 pub enum PraSpaceKind {
     Space,
@@ -26,9 +29,9 @@ pub enum Pra {
     Tok(FTPtr), // the index of the token
     Concat(Vec<Self>),
     Group(Box<Self>),
-    Nest(Box<Self>, usize),
+    Nest(Box<Self>, NestAmt),
     // This is e.g. a base_item or a chp_item, etc. It is a thing that can have extra new lines in front of it without strange behavior, and which should preserve double spaces if they exist
-    DelimitedChunkConcat(Box<Self>, Vec<PraChunk>, Option<Box<Self>>, usize),
+    DelimitedChunkConcat(Box<Self>, Vec<PraChunk>, Option<Box<Self>>, NestAmt),
 }
 
 #[derive(Clone)]
@@ -68,7 +71,7 @@ impl Pra {
     }
 
     #[inline]
-    pub fn nest(self, indent: usize) -> Pra {
+    pub fn nest(self, indent: NestAmt) -> Pra {
         Pra::Nest(Box::new(self), indent)
     }
 
@@ -222,7 +225,7 @@ pub fn concat_vec<O: PrAble>(l: &Vec<O>, sep: Pra) -> Pra {
     Pra::Concat(itertools::intersperse(l.into_iter().map(|v| v.pr()), sep).collect::<Vec<_>>())
 }
 #[inline]
-pub fn concat_chunks(initial_nl: Pra, l: Vec<PraChunk>, rbrace: Option<Pra>, nest_amt: usize) -> Pra {
+pub fn concat_chunks(initial_nl: Pra, l: Vec<PraChunk>, rbrace: Option<Pra>, nest_amt: NestAmt) -> Pra {
     Pra::DelimitedChunkConcat(Box::new(initial_nl), l, rbrace.map(Box::new), nest_amt)
 }
 #[inline]
@@ -247,13 +250,13 @@ enum EvaledPra {
     Tok(Vec<Comment>, String), // the index of the token
     Concat(Vec<Self>),
     Group(Box<Self>),
-    Nest(Box<Self>, usize),
+    Nest(Box<Self>, NestAmt),
     DelimitedChunkConcat(
         Box<Option<Self>>,
         Vec<EvaledPraChunk>,
         Vec<Comment>,
         Option<Box<Self>>,
-        usize,
+        NestAmt,
     ),
 }
 
@@ -407,7 +410,7 @@ impl EvaledPra {
                 allocator.concat(items.iter().map(|v| v.pretty(allocator)))
             }
             EvaledPra::Group(g) => g.pretty(allocator).group(),
-            EvaledPra::Nest(g, amt) => g.pretty(allocator).nest(*amt as isize),
+            EvaledPra::Nest(g, amt) => g.pretty(allocator).nest(amt.0 as isize),
             EvaledPra::DelimitedChunkConcat(initial_nl, items, final_comments, rparen, nest_amt) => {
                 let strip_3nl = |comments: Vec<Comment>| {
                     comments.into_iter().fold(Vec::new(), |mut v, x| {
@@ -479,7 +482,7 @@ impl EvaledPra {
                 let rparen = rparen
                     .as_ref()
                     .map_or(allocator.nil(), |v| allocator.hardline().append(v.pretty(allocator)));
-                items.append(final_comments).nest(*nest_amt as isize).append(rparen)
+                items.append(final_comments).nest(nest_amt.0 as isize).append(rparen)
             }
         }
     }

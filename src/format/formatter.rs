@@ -235,7 +235,7 @@ impl PrAble for Expr {
             },
             Expr::Concat(lbrace, items, rbrace) => group((
                 lbrace,
-                concat((line_(), concat_sep1(items, line()))).nest(2),
+                concat((line_(), concat_sep1(items, line()))).nest(NestAmt(2)),
                 line_(),
                 rbrace,
             )),
@@ -246,11 +246,13 @@ impl PrAble for Expr {
                     lhs,
                     template_params,
                     lparen,
-                    concat_sep1(items, space()).nest(4),
+                    concat_sep1(items, space()).nest(NestAmt(2)),
                     rparen,
                 ))
             }
-            Expr::Parened(lparen, e, rparen) => group((lparen, concat((line_(), e.pr())).nest(2), line_(), rparen)),
+            Expr::Parened(lparen, e, rparen) => {
+                group((lparen, concat((line_(), e.pr())).nest(NestAmt(2)), line_(), rparen))
+            }
             Expr::MacroLoop(lparen, (_, op), id, colon1, range, colon2, e, rparen) => group((
                 lparen,
                 op,
@@ -295,11 +297,11 @@ impl PrAble for OptTemplateSpec {
         let template = match template {
             Some((kw_template, lbrace, params, rbrace)) => {
                 let params = concat_sep1(params, space());
-                concat((kw_template, lbrace, params.group().nest(4), rbrace, space()))
+                concat((kw_template, lbrace, params.group().nest(NestAmt(2)), rbrace, space()))
             }
             None => nil(),
         };
-        concat((export, template))
+        group((export, template))
     }
 }
 
@@ -314,7 +316,12 @@ impl PrAble for ParenedPortFormalList {
     fn pr(&self) -> Pra {
         let ParenedPortFormalList(lparen, items, rparen) = self;
         match items {
-            Some(items) => group((lparen, line_(), concat_sep1(items, line()), line_(), rparen)).nest(4),
+            Some(items) => group((
+                lparen,
+                concat((line_(), concat_sep1(items, line()))).nest(NestAmt(2)),
+                line_(),
+                rparen,
+            )),
             None => concat((lparen, rparen)),
         }
     }
@@ -331,7 +338,12 @@ impl PrAble for InterfaceSpecItem {
     fn pr(&self) -> Pra {
         let InterfaceSpecItem(tp, lbrace, items, rbrace) = self;
         let items = concat_sep1(items, space());
-        concat((tp, lbrace, items.group().nest(/*TODO GIVE GENERIC NAME*/ 2), rbrace))
+        concat((
+            tp,
+            lbrace,
+            items.group().nest(/*TODO GIVE GENERIC NAME*/ NestAmt(2)),
+            rbrace,
+        ))
     }
 }
 impl PrAble for InterfaceSpec {
@@ -385,7 +397,16 @@ impl PrAble for OverrideOneSpec {
 impl PrAble for OverrideSpec {
     fn pr(&self) -> Pra {
         let OverrideSpec(lbrace, items, rbrace) = self;
-        concat((lbrace, concat_vec(items, space()), rbrace))
+        match items.len() {
+            0 => group((lbrace, rbrace)), // TODO just return nil?
+            _ => group((
+                hard_line(),
+                lbrace,
+                concat((hard_line(), concat_vec(items, hard_line()))).nest(NestAmt(2)),
+                hard_line(),
+                rbrace,
+            )),
+        }
     }
 }
 
@@ -420,9 +441,9 @@ impl PrAble for ConnectionId {
         concat((
             id,
             brackets,
-            port_conn
-                .as_ref()
-                .map_or(nil(), |(lparen, conn, rparen)| concat((lparen, conn, rparen))),
+            port_conn.as_ref().map_or(nil(), |(lparen, conn, rparen)| {
+                group((lparen, concat((line_(), conn)).nest(NestAmt(2)), line_(), rparen))
+            }),
             attr_list
                 .as_ref()
                 .map_or(nil(), |(at_sign, attrs)| concat((at_sign, attrs))),
@@ -443,7 +464,7 @@ impl PrAble for InstanceId {
 impl Instance {
     fn prc(&self) -> PraChunk {
         let Instance(tp, ids, semi) = self;
-        let p = concat((tp, space(), concat_sep1(ids, soft_line()).nest(4), semi));
+        let p = concat((tp, space(), concat_sep1(ids, soft_line()).nest(NestAmt(2)), semi));
         p.chunk()
     }
 }
@@ -467,15 +488,15 @@ impl PrAble for GuardedClause {
     fn pr(&self) -> Pra {
         match self {
             GuardedClause::Expr(e, arrow, items) => {
-                let items = concat_chunks(hard_line(), items.iter().map(|v| v.prc()).collect(), None, 6);
+                let items = concat_chunks(hard_line(), items.iter().map(|v| v.prc()).collect(), None, NestAmt(2));
                 concat((e, space(), arrow, space(), items))
             }
             GuardedClause::Else(kw, arrow, items) => {
-                let items = concat_chunks(hard_line(), items.iter().map(|v| v.prc()).collect(), None, 6);
+                let items = concat_chunks(hard_line(), items.iter().map(|v| v.prc()).collect(), None, NestAmt(2));
                 concat((kw, space(), arrow, space(), items))
             }
             GuardedClause::MacroLoop(MacroLoop(lparen, ctrl, id, colon1, range, colon2, (e, arrow, items), rparen)) => {
-                let items = concat_chunks(hard_line(), items.iter().map(|v| v.prc()).collect(), None, 6);
+                let items = concat_chunks(hard_line(), items.iter().map(|v| v.prc()).collect(), None, NestAmt(2));
                 let prefix = concat((
                     lparen,
                     ctrl,
@@ -488,7 +509,7 @@ impl PrAble for GuardedClause {
                     space(),
                     colon2,
                 ));
-                concat((prefix, space(), e, space(), arrow, items, space(), rparen))
+                group((prefix, space(), e, space(), arrow, items, space(), rparen))
             }
         }
     }
@@ -510,7 +531,7 @@ fn format_base_conditional_like(
             .map(|(sep, clause)| concat((sep, space(), clause)).chunk())
             .collect_vec();
 
-        concat((lbrac, concat_chunks(line(), chunks, Some(rbrac), 0)))
+        concat((lbrac, concat_chunks(line(), chunks, Some(rbrac), NestAmt(0))))
     }
 }
 impl BaseDynamicLoop {
@@ -531,8 +552,8 @@ impl BaseMacroLoop {
         let BaseMacroLoop(MacroLoop(lparen, semi, id, colon1, range, colon2, items, rparen)) = self;
         let items = items.iter().map(|v| v.prc()).collect_vec();
         let semi = semi.map_or(nil(), |v| v.pr());
-        let chunks_then_close_paren = concat_chunks(line(), items, Some(rparen.pr()), 4);
-        concat((
+        let chunks_then_close_paren = concat_chunks(line(), items, Some(rparen.pr()), NestAmt(2));
+        group((
             lparen,
             semi,
             space(),
@@ -612,7 +633,7 @@ impl PrAble for SupplySpec {
 impl PrAble for AssignStmt {
     fn pr(&self) -> Pra {
         let AssignStmt(lhs, eq, rhs) = self;
-        group((lhs, space(), eq, soft_line(), rhs.pr())).nest(4)
+        group((lhs, space(), eq, soft_line(), rhs.pr())).nest(NestAmt(2))
     }
 }
 impl PrAble for AssignBoolDirStmt {
@@ -652,17 +673,17 @@ impl PrAble for GuardedCmd {
         match self {
             GuardedCmd::Expr(e, arrow, items) => {
                 let chunks = items.chunks();
-                let items = concat_chunks(line(), chunks, None, 2);
+                let items = concat_chunks(line(), chunks, None, NestAmt(2));
 
-                group((e.pr().nest(3), space(), arrow, space(), items))
+                group((e.pr().nest(NestAmt(2)), space(), arrow, space(), items))
             }
             GuardedCmd::Else(kw, arrow, items) => {
                 let chunks = items.chunks();
-                let items = concat_chunks(line(), chunks, None, 2);
+                let items = concat_chunks(line(), chunks, None, NestAmt(2));
                 group((kw, space(), arrow, space(), items))
             }
             GuardedCmd::Macro(lparen, ctrl, id, colon1, range, colon2, e, arrow, items, rparen) => {
-                let items = concat_chunks(line(), items.chunks(), None, 2);
+                let items = concat_chunks(line(), items.chunks(), None, NestAmt(2));
                 let prefix = concat((
                     lparen,
                     ctrl,
@@ -692,7 +713,7 @@ fn format_chp_conditional_like(lbrac: Pra, extra_space: Pra, items: &SepList1<Gu
             .map(|(sep, clause)| concat((sep, space(), clause)).chunk())
             .collect_vec();
 
-        group((lbrac, concat_chunks(nil(), chunks, Some(rbrac), 0)))
+        group((lbrac, concat_chunks(nil(), chunks, Some(rbrac), NestAmt(0))))
     }
 }
 impl PrAble for ChpBracketedStmt {
@@ -712,11 +733,11 @@ impl PrAble for ChpBracketedStmt {
                 let guard = guard
                     .as_ref()
                     .map_or(nil(), |(arrow, guard)| concat((hard_line(), arrow, space(), guard)));
-                concat((
+                group((
                     lbrac,
-                    concat_chunks(line(), items.chunks(), None, 6),
+                    concat_chunks(line(), items.chunks(), None, NestAmt(2)),
                     guard,
-                    hard_line(),
+                    line(),
                     rbrac,
                 ))
             }
@@ -732,13 +753,14 @@ impl PrAble for ChpStmt {
             ChpStmt::SendStmt(v) => v.pr(),
             ChpStmt::RecvStmt(v) => v.pr(),
             ChpStmt::Skip(v) => v.pr(),
-            ChpStmt::ParenedBody(lparen, items, rparen) => {
-                concat((lparen, concat_chunks(line(), items.chunks(), Some(rparen.pr()), 4)))
-            }
+            ChpStmt::ParenedBody(lparen, items, rparen) => concat((
+                lparen,
+                concat_chunks(line(), items.chunks(), Some(rparen.pr()), NestAmt(2)),
+            )),
             ChpStmt::FuncCall(name, lparen, args, rparen) => concat((
                 name,
                 lparen,
-                concat((concat_sep1(args, line()), line_())).group().nest(4),
+                group((concat_sep1(args, line()), line_())).nest(NestAmt(2)),
                 rparen,
             )),
             ChpStmt::DottedCall(base, dot, id, lparen, args, rparen) => concat((
@@ -746,12 +768,12 @@ impl PrAble for ChpStmt {
                 dot,
                 id,
                 lparen,
-                concat((concat_sep1(args, line()), line_())).group().nest(4),
+                group((concat_sep1(args, line()), line_())).nest(NestAmt(2)),
                 rparen,
             )),
             ChpStmt::BracketedStmt(p) => p.pr(),
             ChpStmt::MacroLoop(MacroLoop(lparen, (_, ctrl), id, colon1, range, colon2, items, rparen)) => {
-                let items = concat_chunks(line(), items.chunks(), None, 6);
+                let items = concat_chunks(line(), items.chunks(), None, NestAmt(2));
                 let prefix = concat((
                     lparen,
                     ctrl,
@@ -764,7 +786,7 @@ impl PrAble for ChpStmt {
                     space(),
                     colon2,
                 ));
-                concat((prefix, space(), items, space(), rparen))
+                group((prefix, space(), items, space(), rparen))
             }
         }
     }
@@ -803,10 +825,10 @@ impl LangChp {
 
         match items {
             Some(items) => {
-                let items_and_rbrace = concat_chunks(line(), items.chunks(), Some(rbrace.pr()), 2);
-                concat((kw, supply_spec, space(), lbrace, items_and_rbrace)).chunk()
+                let items_and_rbrace = concat_chunks(line(), items.chunks(), Some(rbrace.pr()), NestAmt(2));
+                group((kw, supply_spec, space(), lbrace, items_and_rbrace)).chunk()
             }
-            None => concat((kw, supply_spec, space(), lbrace, rbrace)).chunk(),
+            None => group((kw, supply_spec, space(), lbrace, rbrace)).chunk(),
         }
     }
 }
@@ -817,7 +839,8 @@ impl HseBodies {
             HseBodies::Body(items) => items.0.chunks(),
             HseBodies::Labeled(labeled) => zip_map2_sep1(labeled, nil(), |labeled_body, semi| {
                 let LabeledHseBody(id, colon, items, colon2, id2) = labeled_body;
-                let items_and_term = concat_chunks(line(), items.0.chunks(), Some(concat((colon2, id2, semi))), 2);
+                let items_and_term =
+                    concat_chunks(line(), items.0.chunks(), Some(concat((colon2, id2, semi))), NestAmt(2));
                 concat((id, colon, items_and_term)).chunk()
             }),
         }
@@ -830,7 +853,7 @@ impl LangHse {
 
         match bodies {
             Some(bodies) => {
-                let items_and_rbrace = concat_chunks(line(), bodies.chunks(), Some(rbrace.pr()), 2);
+                let items_and_rbrace = concat_chunks(line(), bodies.chunks(), Some(rbrace.pr()), NestAmt(2));
                 concat((kw, supply_spec, space(), lbrace, items_and_rbrace)).chunk()
             }
             None => concat((kw, supply_spec, space(), lbrace, rbrace)).chunk(),
@@ -900,13 +923,13 @@ impl PrAble for PrsItem {
                 let spec = spec
                     .as_ref()
                     .map_or(nil(), |(langle, spec, rangle)| concat((langle, spec, rangle)));
-                let body_with_rbrace = concat_chunks(line(), body.chunks(), Some(rbrace.pr()), 2);
+                let body_with_rbrace = concat_chunks(line(), body.chunks(), Some(rbrace.pr()), NestAmt(2));
                 concat((id, spec, space(), lbrace, body_with_rbrace))
             }
             PrsItem::MacroLoop(MacroLoop(lparen, (), id, colon1, range, colon2, items, rparen)) => {
-                let items = concat_chunks(line(), items.chunks(), None, 4);
+                let items = concat_chunks(line(), items.chunks(), None, NestAmt(2));
                 let prefix = concat((lparen, space(), id, space(), colon1, space(), range, space(), colon2));
-                concat((prefix, space(), items, space(), rparen))
+                group((prefix, space(), items, space(), rparen))
             }
             PrsItem::Pass((_, kw), size_spec, lparen, id1, comma1, id2, comma2, id3, rparen) => {
                 let size_spec = size_spec.as_ref().map_or(nil(), |size_spec| size_spec.pr());
@@ -969,7 +992,11 @@ impl LangPrs {
         let LangPrs(kw, supply_spec, opt_star, lbrace, body, rbrace) = self;
         let supply_spec = supply_spec.as_ref().map_or(nil(), |spec| concat((space(), spec)));
         let opt_star = opt_star.as_ref().map_or(nil(), |star| concat((space(), star)));
-        let body_and_rbrace = concat_chunks(line(), body.chunks(), Some(rbrace.pr()), 2);
+        let chunks = body.chunks();
+        let body_and_rbrace = match chunks.len() {
+            0 => rbrace.pr(),
+            _ => concat_chunks(line(), body.chunks(), Some(rbrace.pr()), NestAmt(2)),
+        };
         concat((kw, supply_spec, opt_star, space(), lbrace, body_and_rbrace)).chunk()
     }
 }
@@ -1000,7 +1027,7 @@ impl SpecItem {
             SpecItem::Normal(id, lparen, eids, rparen) => concat((
                 id,
                 lparen,
-                concat((concat_sep1(eids, line()), line_())).group().nest(2),
+                concat((concat_sep1(eids, line()), line_())).group().nest(NestAmt(2)),
                 rparen,
             ))
             .chunk(),
@@ -1028,7 +1055,7 @@ impl PrAble for SpecBody {
                         line(),
                         items.iter().map(|v| v.prc()).collect_vec(),
                         Some(rbrace.pr()),
-                        2,
+                        NestAmt(2),
                     );
                     chunks.push(concat((kw, space(), lbrace, items_and_rbrace)).chunk());
                 }
@@ -1037,7 +1064,7 @@ impl PrAble for SpecBody {
 
         generic_clause.iter().for_each(|v| chunks.push(v.prc()));
 
-        concat((lbrace, concat_chunks(line(), chunks, Some(rbrace.pr()), 2)))
+        concat((lbrace, concat_chunks(line(), chunks, Some(rbrace.pr()), NestAmt(2))))
     }
 }
 impl LangSpec {
@@ -1057,7 +1084,7 @@ impl LangRefine {
                 line(),
                 items.iter().map(|v| v.prc()).collect_vec(),
                 Some(rbrace.pr()),
-                2,
+                NestAmt(2),
             ),
         ))
         .chunk()
@@ -1085,8 +1112,8 @@ impl PrAble for SizingItem {
             }
             SizingItem::DirectiveMacroLoop(MacroLoop(lparen, semi, id, colon1, range, colon2, items, rparen)) => {
                 let chunks_then_close_paren =
-                    concat_chunks(line(), zip_sep1_as_chunks(items, nil()), Some(rparen.pr()), 2);
-                concat((
+                    concat_chunks(line(), zip_sep1_as_chunks(items, nil()), Some(rparen.pr()), NestAmt(2));
+                group((
                     lparen,
                     semi,
                     space(),
@@ -1106,7 +1133,7 @@ impl PrAble for SizingItem {
 impl LangSizing {
     fn prc(&self) -> PraChunk {
         let LangSizing(kw, lbrace, items, rbrace) = self;
-        let chunks_and_rbrace = concat_chunks(line(), zip_sep1_as_chunks(items, nil()), Some(rbrace.pr()), 2);
+        let chunks_and_rbrace = concat_chunks(line(), zip_sep1_as_chunks(items, nil()), Some(rbrace.pr()), NestAmt(2));
         concat((kw, lbrace, chunks_and_rbrace)).chunk()
     }
 }
@@ -1114,14 +1141,14 @@ impl LangSizing {
 impl PrAble for ActionItem {
     fn pr(&self) -> Pra {
         let ActionItem(id, lbrace, items, rbrace) = self;
-        let chunks_and_rbrace = concat_chunks(line(), items.0.chunks(), Some(rbrace.pr()), 2);
+        let chunks_and_rbrace = concat_chunks(line(), items.0.chunks(), Some(rbrace.pr()), NestAmt(2));
         concat((id, lbrace, chunks_and_rbrace))
     }
 }
 impl LangInitialize {
     fn prc(&self) -> PraChunk {
         let LangInitialize(kw, lbrace, items, rbrace) = self;
-        let chunks_and_rbrace = concat_chunks(line(), zip_sep1_as_chunks(items, nil()), Some(rbrace.pr()), 2);
+        let chunks_and_rbrace = concat_chunks(line(), zip_sep1_as_chunks(items, nil()), Some(rbrace.pr()), NestAmt(2));
         concat((kw, lbrace, chunks_and_rbrace)).chunk()
     }
 }
@@ -1138,7 +1165,7 @@ impl DataflowOrdering {
                 concat_sep1(ids2, space()),
             ))
         });
-        let chunks_and_rbrace = concat_chunks(line(), items, Some(rbrace.pr()), 2);
+        let chunks_and_rbrace = concat_chunks(line(), items, Some(rbrace.pr()), NestAmt(2));
         concat((id, lbrace, chunks_and_rbrace)).chunk()
     }
 }
@@ -1183,7 +1210,7 @@ impl PrAble for DataflowItem {
             DataflowItem::Cluster(kw, lbrace, items, rbrace) => concat((
                 kw,
                 lbrace,
-                concat_chunks(line(), zip_sep1_as_chunks(items, nil()), Some(rbrace.pr()), 2),
+                concat_chunks(line(), zip_sep1_as_chunks(items, nil()), Some(rbrace.pr()), NestAmt(2)),
             )),
             DataflowItem::Sink(id, arrow, star) => concat((id, space(), arrow, space(), star)),
         }
@@ -1198,7 +1225,7 @@ impl LangDataflow {
         };
         let items = zip_sep1_as_chunks(items, nil());
         let chunks = ordering.into_iter().chain(items.into_iter()).collect_vec();
-        concat((kw, lbrace, concat_chunks(line(), chunks, Some(rbrace.pr()), 2))).chunk()
+        concat((kw, lbrace, concat_chunks(line(), chunks, Some(rbrace.pr()), NestAmt(2)))).chunk()
     }
 }
 
@@ -1227,7 +1254,7 @@ impl TopItem {
                 let rename = rename.map_or(nil(), |(arrow, id)| concat((space(), arrow, space(), id)));
                 concat((kw_opt, space(), name, rename, semi)).chunk()
             }
-            TopItem::DefTemplated(spec, def, body) => concat((spec, def, body)).chunk(),
+            TopItem::DefTemplated(spec, def, body) => group((spec, line_(), def, body)).chunk(),
             TopItem::DefEnum(v) => v.prc(),
         }
     }
@@ -1236,7 +1263,18 @@ impl TopItem {
 impl MethodsBody {
     fn prc(&self) -> PraChunk {
         let MethodsBody(kw, lbrace, methods, rbrace) = self;
-        concat((kw, lbrace, concat_vec(methods, hard_line()), rbrace)).chunk()
+        match methods.len() {
+            0 => group((
+                kw,
+                space(),
+                lbrace,
+                hard_line(),
+                concat_vec(methods, hard_line()),
+                rbrace,
+            ))
+            .chunk(),
+            _ => group((kw, space(), lbrace, rbrace)).chunk(),
+        }
     }
 }
 
@@ -1246,12 +1284,15 @@ impl PrAble for Method {
             Method::Hse(id, lbrace, items, rbrace) => concat((
                 id,
                 lbrace,
-                concat_chunks(line(), items.0.chunks(), Some(rbrace.pr()), 2),
+                concat_chunks(line(), items.0.chunks(), Some(rbrace.pr()), NestAmt(2)),
             )),
             Method::Assign(id, eq, e, semi) => concat((id, space(), eq, space(), e, semi)),
             Method::Macro(kw, id, ports, lbrace, items, rbrace) => {
                 let body = match items {
-                    Some(items) => concat((lbrace, concat_chunks(line(), items.0.chunks(), Some(rbrace.pr()), 2))),
+                    Some(items) => concat((
+                        lbrace,
+                        concat_chunks(line(), items.0.chunks(), Some(rbrace.pr()), NestAmt(2)),
+                    )),
                     None => concat((lbrace, rbrace)),
                 };
                 concat((kw, space(), id, ports, body))
@@ -1271,12 +1312,12 @@ impl PrAble for ProclikeBody {
                     None => {}
                 }
 
-                concat((
-                    space(),
-                    overrides.as_ref().map_or(nil(), |v| v.pr()),
-                    lbrace,
-                    concat_chunks(line(), items, Some(rbrace.pr()), 2),
-                ))
+                let items = match items.len() {
+                    0 => rbrace.pr(),
+                    _ => concat_chunks(hard_line(), items, Some(rbrace.pr()), NestAmt(2)),
+                };
+
+                group((space(), overrides.as_ref().map_or(nil(), |v| v.pr()), lbrace, items))
             }
         }
     }
@@ -1287,11 +1328,13 @@ impl NamespaceDecl {
         let NamespaceDecl(opt_kw_export, kw_namespace, name, lbrace, items, rbrace) = self;
         let kw_export = opt_kw_export.map_or(nil(), |kw| concat((kw, space())));
         let chunks = items.iter().map(|v| v.prc()).collect_vec();
-        let p = concat((
-            concat((kw_export, kw_namespace, space(), name, line())),
-            concat((lbrace, concat_chunks(line(), chunks, Some(rbrace.pr()), 2))),
-        ));
-        p.chunk()
+
+        let items = match items.len() {
+            0 => rbrace.pr(),
+            _ => concat_chunks(line(), chunks, Some(rbrace.pr()), NestAmt(2)),
+        };
+
+        group((kw_export, kw_namespace, space(), name, space(), lbrace, items)).chunk()
     }
 }
 
@@ -1319,6 +1362,6 @@ pub fn print_pretty(
     width: usize,
 ) -> Option<String> {
     let chunks = ast.iter().map(|v| v.prc()).collect_vec();
-    let chunks = concat_chunks(line(), chunks, None, 0);
+    let chunks = concat_chunks(line(), chunks, None, NestAmt(0));
     as_pretty(chunks, &final_comments, flat_tokens, tokens, width)
 }
