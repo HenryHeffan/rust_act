@@ -1,12 +1,15 @@
-pub use crate::parser::utils::{uncut, CtrlC, CtrlN, KwC, Many0, Many1, MyParserExt, ParserExt2, Unterm, ET};
-use nom::{branch::alt, bytes::complete::tag, combinator::peek, sequence::tuple, IResult, Parser};
+use nom::{branch::alt, bytes::complete::tag, combinator::peek, IResult, Parser, sequence::tuple};
 use nom_supreme::parser_ext::ParserExt;
 
+use ast::*;
+
 use crate::token::{FlatToken, TokenKind, Unspaced};
+pub use crate::utils::{CtrlC, CtrlN, ET, KwC, Many0, Many1, MyParserExt, ParserExt2, uncut, Unterm};
 
 pub mod ast {
+    use crate::utils::SepList1;
+
     use super::*;
-    use crate::parser::utils::SepList1;
 
     pub type Tok = FlatToken;
 
@@ -14,8 +17,10 @@ pub mod ast {
     pub struct FTPtr {
         ptr: usize,
     }
+
     #[derive(Debug, Copy, Clone)]
     pub struct FTStart(FTPtr);
+
     impl FTPtr {
         pub fn of_ptr(ft: &u8) -> FTPtr {
             FTPtr {
@@ -29,6 +34,7 @@ pub mod ast {
             self.ptr - ft_start.0.ptr
         }
     }
+
     impl FTStart {
         pub fn of_vec(fts: &Vec<FlatToken>) -> FTStart {
             match fts.first() {
@@ -40,10 +46,13 @@ pub mod ast {
 
     #[derive(Debug, Copy, Clone)]
     pub struct Num(pub FTPtr);
+
     #[derive(Debug, Copy, Clone)]
     pub struct Ident(pub FTPtr);
+
     #[derive(Debug, Copy, Clone)]
     pub struct StrTok(pub FTPtr);
+
     #[derive(Debug, Copy, Clone)]
     pub struct Kw(pub FTPtr);
 
@@ -53,6 +62,7 @@ pub mod ast {
         Ctrl2(FTPtr, FTPtr),
         Ctrl3(FTPtr, FTPtr, FTPtr),
     }
+
     pub type CtrlEquals = Ctrl;
     pub type CtrlLParen = Ctrl;
     pub type CtrlRParen = Ctrl;
@@ -68,10 +78,13 @@ pub mod ast {
     pub type CtrlColonColon = Ctrl;
     pub type CtrlComma = Ctrl;
     pub type CtrlSemi = Ctrl;
-    pub type CtrlHash = Ctrl; // #
-    pub type CtrlLArrow = Ctrl; // ->
+    pub type CtrlHash = Ctrl;
+    // #
+    pub type CtrlLArrow = Ctrl;
+    // ->
     pub type CtrlAtSign = Ctrl;
-    pub type CtrlVBar = Ctrl; // |
+    pub type CtrlVBar = Ctrl;
+    // |
     pub type CtrlQMark = Ctrl;
     pub type CtrlStar = Ctrl; // *
 
@@ -182,9 +195,11 @@ pub mod ast {
         ),
         Parened(CtrlLParen, Box<Self>, CtrlRParen),
     }
+
     pub type ArrayedExprs = Arrayed<Expr>;
 
     pub type ExprRange = (Expr, Option<(CtrlDotDot, Expr)>);
+
     #[derive(Debug)]
     pub enum ExprOrStr {
         Expr(Expr),
@@ -221,6 +236,7 @@ pub mod ast {
         pub ident: Ident,
         pub brackets: Vec<(CtrlRBracket, ExprRange, CtrlLBracket)>,
     }
+
     #[derive(Debug)]
     pub struct ExprId(pub SepList1<BaseId, CtrlDot>);
 
@@ -260,7 +276,6 @@ pub mod ast {
         pub CtrlRParen,
     );
 }
-use ast::*;
 
 #[inline]
 pub fn num<'a>(i: &'a [Tok]) -> IResult<&'a [Tok], Num, ET> {
@@ -268,12 +283,14 @@ pub fn num<'a>(i: &'a [Tok]) -> IResult<&'a [Tok], Num, ET> {
         .map(|vs: &'a [Tok]| Num(FTPtr::of_ptr(&vs[0])))
         .parse(i)
 }
+
 #[inline]
 pub fn ident<'a>(i: &'a [Tok]) -> IResult<&'a [Tok], Ident, ET> {
     tag(&[TokenKind::Ident as u8][..])
         .map(|vs: &'a [Tok]| Ident(FTPtr::of_ptr(&vs[0])))
         .parse(i)
 }
+
 #[inline]
 pub fn string<'a>(i: &'a [Tok]) -> IResult<&'a [Tok], StrTok, ET> {
     tag(&[TokenKind::Str as u8][..])
@@ -560,15 +577,16 @@ fn expr_func_name(i: &[u8]) -> IResult<&[u8], FuncName, ET> {
         kw("bool").map(FuncName::Bool),
         uncut(qualified_name.map(FuncName::QualifiedName)),
     ))
-    .parse(i)
+        .parse(i)
 }
+
 impl<'a, F> Parser<&'a [u8], Expr, ET<'a>> for UnaryExprRecParser<F>
-where
-    F: Parser<&'a [u8], Expr, ET<'a>> + Clone + Copy,
-{
-    fn parse(&mut self, i: &'a [u8]) -> IResult<&'a [u8], Expr, ET<'a>>
     where
         F: Parser<&'a [u8], Expr, ET<'a>> + Clone + Copy,
+{
+    fn parse(&mut self, i: &'a [u8]) -> IResult<&'a [u8], Expr, ET<'a>>
+        where
+            F: Parser<&'a [u8], Expr, ET<'a>> + Clone + Copy,
     {
         // 'Atoms' are expressions that contain no ambiguity
         let concat = ctrl('{')
@@ -624,7 +642,7 @@ where
                 .context("parened expr"),
             concat.context("concat"),
         ))
-        .context("atom");
+            .context("atom");
 
         // https://en.cppreference.com/w/c/language/operator_precedence
 
@@ -696,9 +714,9 @@ struct BinaryExprRecParser<F: Clone + Copy, G: Clone + Copy> {
 }
 
 impl<'a, F, G> Parser<&'a [u8], Expr, ET<'a>> for BinaryExprRecParser<F, G>
-where
-    F: Parser<&'a [u8], Expr, ET<'a>> + Clone + Copy,
-    G: Parser<&'a [u8], (BinaryOp, Ctrl), ET<'a>> + Clone + Copy,
+    where
+        F: Parser<&'a [u8], Expr, ET<'a>> + Clone + Copy,
+        G: Parser<&'a [u8], (BinaryOp, Ctrl), ET<'a>> + Clone + Copy,
 {
     fn parse(&mut self, i: &'a [u8]) -> IResult<&'a [u8], Expr, ET<'a>> {
         // In order to make it compile in a reasonable amount of time, we do binary operator parsing in two steps.
@@ -755,9 +773,9 @@ struct QueryParser<F: Clone + Copy, G: Clone + Copy> {
 }
 
 impl<'a, F, G> Parser<&'a [u8], Expr, ET<'a>> for QueryParser<F, G>
-where
-    F: Parser<&'a [u8], Expr, ET<'a>> + Clone + Copy,
-    G: Parser<&'a [u8], (BinaryOp, Ctrl), ET<'a>> + Clone + Copy,
+    where
+        F: Parser<&'a [u8], Expr, ET<'a>> + Clone + Copy,
+        G: Parser<&'a [u8], (BinaryOp, Ctrl), ET<'a>> + Clone + Copy,
 {
     fn parse(&mut self, i: &'a [u8]) -> IResult<&'a [u8], Expr, ET<'a>> {
         let binary_op = BinaryExprRecParser {
@@ -847,8 +865,8 @@ pub fn expr_no_qmark(i: &[u8]) -> IResult<&[u8], Expr, ET> {
         unary_expr: UnaryExprRecParser { expr },
         infix_binary_ops,
     }
-    .context("expr")
-    .parse(i)
+        .context("expr")
+        .parse(i)
 }
 
 pub fn expr_no_gt(i: &[u8]) -> IResult<&[u8], Expr, ET> {
@@ -856,8 +874,8 @@ pub fn expr_no_gt(i: &[u8]) -> IResult<&[u8], Expr, ET> {
         expr,
         infix_binary_ops: infix_binary_ops_no_gt,
     }
-    .context("expr no gt")
-    .parse(i)
+        .context("expr no gt")
+        .parse(i)
 }
 
 pub fn expr_range(i: &[u8]) -> IResult<&[u8], ExprRange, ET> {
@@ -959,9 +977,9 @@ pub fn prs_expr(i: &[u8]) -> IResult<&[u8], PrsExpr, ET> {
 //               | expr_id
 #[inline]
 pub fn arrayed<'a, T, F, G>(array: F, base: G) -> impl Parser<&'a [u8], Arrayed<T>, ET<'a>>
-where
-    F: Fn(&'a [u8]) -> IResult<&'a [u8], Arrayed<T>, ET<'a>>,
-    G: Fn(&'a [u8]) -> IResult<&'a [u8], T, ET<'a>>,
+    where
+        F: Fn(&'a [u8]) -> IResult<&'a [u8], Arrayed<T>, ET<'a>>,
+        G: Fn(&'a [u8]) -> IResult<&'a [u8], T, ET<'a>>,
 {
     move |i| {
         let term = alt((
@@ -1022,7 +1040,7 @@ pub fn expr_id_or_star(i: &[u8]) -> IResult<&[u8], ExprIdOrStar, ET> {
         ctrl('*').map(ExprIdOrStar::Star),
         expr_id.cut().map(ExprIdOrStar::ExprId),
     ))
-    .parse(i)
+        .parse(i)
 }
 
 pub fn expr_id_or_star_or_bar(i: &[u8]) -> IResult<&[u8], ExprIdOrStarOrBar, ET> {
@@ -1031,7 +1049,7 @@ pub fn expr_id_or_star_or_bar(i: &[u8]) -> IResult<&[u8], ExprIdOrStarOrBar, ET>
         ctrl('*').map(ExprIdOrStarOrBar::Star),
         ctrl('|').map(ExprIdOrStarOrBar::Bar),
     ))
-    .parse(i)
+        .parse(i)
 }
 
 // supply_spec: "<" expr_id [ "," expr_id ] [ "|" expr_id "," expr_id ] ">"

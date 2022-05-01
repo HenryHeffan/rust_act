@@ -1,17 +1,21 @@
-use super::basic::{ast::Ctrl, ctrl};
-use crate::ast::{FTPtr, Kw};
+use core::convert::Infallible;
 use core::marker::PhantomData;
+use std::{ops::RangeTo, str};
+use std::fmt::Debug;
+
 use nom;
 use nom::{
+    And,
     branch::alt,
     bytes::complete::{tag, take},
     combinator::{cut, not, peek, recognize},
-    error::{ContextError, ParseError},
-    And, IResult, InputLength, Offset, Parser, Slice,
+    error::{ContextError, ParseError}, InputLength, IResult, Offset, Parser, Slice,
 };
 use nom_supreme::{error::ErrorTree, parser_ext::*};
-use std::fmt::Debug;
-use std::{ops::RangeTo, str};
+
+use crate::ast::{FTPtr, Kw};
+
+use super::basic::{ast::Ctrl, ctrl};
 
 pub type ET<'a> = ErrorTree<&'a [u8]>;
 
@@ -29,6 +33,7 @@ enum ZeroLengthParseState<E> {
     Item,
     Separator { terminator_error: E },
 }
+
 impl<E> ZeroLengthParseState<E> {
     fn terminator_error(self) -> Option<E> {
         match self {
@@ -37,6 +42,7 @@ impl<E> ZeroLengthParseState<E> {
         }
     }
 }
+
 /// Shared implementation for parse_separated_terminated_res and
 /// parse_separated_terminated. This exists so that we don't have to have an
 /// unnecessary bound of FromExternalError on parse_separated_terminated.
@@ -45,15 +51,13 @@ fn parse_separated_terminated_impl<Input, ParseOutput, SepOutput, TermOutput, Pa
     mut parser: impl Parser<Input, ParseOutput, ParseErr>,
     mut separator: impl Parser<Input, SepOutput, ParseErr>,
     mut terminator: impl Parser<Input, TermOutput, ParseErr>,
-
     mut init: impl FnMut(ParseOutput) -> Accum,
     mut fold: impl FnMut(Accum, SepOutput, ParseOutput) -> Result<Accum, FoldErr>,
-
     mut build_error: impl FnMut(Input, FoldErr) -> ParseErr,
 ) -> impl Parser<Input, (Accum, TermOutput), ParseErr>
-where
-    Input: Clone + InputLength,
-    ParseErr: ParseError<Input>,
+    where
+        Input: Clone + InputLength,
+        ParseErr: ParseError<Input>,
 {
     use nom::{error::ErrorKind::SeparatedNonEmptyList, Err::Error};
     move |mut input: Input| {
@@ -77,7 +81,7 @@ where
                     break Err(Error(match zero_length_state.terminator_error() {
                         None => item_error,
                         Some(terminator_error) => item_error.or(terminator_error),
-                    }))
+                    }));
                 }
                 Err(err) => break Err(err),
             };
@@ -91,7 +95,7 @@ where
                 // because we *did* successfully parse a separator and an
                 // item, they just happened to be zero length
                 (true, ZeroLengthParseState::Separator { .. }) => {
-                    break Err(Error(ParseErr::from_error_kind(input, SeparatedNonEmptyList)))
+                    break Err(Error(ParseErr::from_error_kind(input, SeparatedNonEmptyList)));
                 }
 
                 // If only the item had a zero-length match, update the
@@ -137,7 +141,7 @@ where
                 // If both the separator and the item had a zero length match,
                 // we're hanging. Bail.
                 (true, ZeroLengthParseState::Item) => {
-                    break Err(Error(ParseErr::from_error_kind(input, SeparatedNonEmptyList)))
+                    break Err(Error(ParseErr::from_error_kind(input, SeparatedNonEmptyList)));
                 }
                 // If only the separator had a zero-length match, update the
                 // state. Additionally preserve the terminator error so that
@@ -156,20 +160,18 @@ where
         }
     }
 }
-use core::convert::Infallible;
 
 #[inline]
 fn parse_separated_terminated<Input, ParseOutput, SepOutput, TermOutput, ParseErr, Accum>(
     parser: impl Parser<Input, ParseOutput, ParseErr>,
     separator: impl Parser<Input, SepOutput, ParseErr>,
     terminator: impl Parser<Input, TermOutput, ParseErr>,
-
     init: impl FnMut(ParseOutput) -> Accum,
     mut fold: impl FnMut(Accum, SepOutput, ParseOutput) -> Accum,
 ) -> impl Parser<Input, (Accum, TermOutput), ParseErr>
-where
-    Input: Clone + InputLength,
-    ParseErr: ParseError<Input>,
+    where
+        Input: Clone + InputLength,
+        ParseErr: ParseError<Input>,
 {
     parse_separated_terminated_impl(
         parser,
@@ -187,9 +189,9 @@ fn collect_separated_terminated<Input, ParseOutput, SepOutput, TermOutput, Parse
     separator: impl Parser<Input, SepOutput, ParseErr>,
     terminator: impl Parser<Input, TermOutput, ParseErr>,
 ) -> impl Parser<Input, (SepList1<ParseOutput, SepOutput>, TermOutput), ParseErr>
-where
-    Input: Clone + InputLength,
-    ParseErr: ParseError<Input>,
+    where
+        Input: Clone + InputLength,
+        ParseErr: ParseError<Input>,
 {
     parse_separated_terminated(
         parser,
@@ -294,11 +296,11 @@ pub struct MyDelim<P, L, OL, R, OR> {
 }
 
 impl<'a, I, P, OP, L, OL, R, OR, E> Parser<I, (OL, OP, OR), E> for MyDelim<P, L, OL, R, OR>
-where
-    P: Parser<I, OP, E>,
-    L: Parser<I, OL, E> + Copy + Clone + Sized,
-    R: Parser<I, OR, E> + Copy + Clone + Sized,
-    E: ParseError<I> + ContextError<I>,
+    where
+        P: Parser<I, OP, E>,
+        L: Parser<I, OL, E> + Copy + Clone + Sized,
+        R: Parser<I, OR, E> + Copy + Clone + Sized,
+        E: ParseError<I> + ContextError<I>,
 {
     #[inline]
     fn parse(&mut self, input: I) -> IResult<I, (OL, OP, OR), E> {
@@ -313,8 +315,8 @@ pub trait ParserExt2<I, O, E>: ParserExt<I, O, E> + Sized {
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
     fn then_ignore<F, O2>(self, terminator: F) -> Terminated<Self, F, O2>
-    where
-        F: Parser<I, O2, E>,
+        where
+            F: Parser<I, O2, E>,
     {
         self.terminated(terminator)
     }
@@ -322,17 +324,17 @@ pub trait ParserExt2<I, O, E>: ParserExt<I, O, E> + Sized {
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
     fn ignore_then<F, O2>(self, successor: F) -> Preceded<F, Self, O>
-    where
-        F: Parser<I, O2, E>,
+        where
+            F: Parser<I, O2, E>,
     {
         self.precedes(successor)
     }
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
     fn ignore_then_opt<F, O2>(self, successor: F) -> Preceded<Optional<F>, Self, O>
-    where
-        F: Parser<I, O2, E>,
-        I: std::clone::Clone,
+        where
+            F: Parser<I, O2, E>,
+            I: std::clone::Clone,
     {
         self.ignore_then(successor.opt())
     }
@@ -340,8 +342,8 @@ pub trait ParserExt2<I, O, E>: ParserExt<I, O, E> + Sized {
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
     fn then<F, O2>(self, f: F) -> And<Self, F>
-    where
-        F: Parser<I, O2, E>,
+        where
+            F: Parser<I, O2, E>,
     {
         self.and(f)
     }
@@ -349,34 +351,34 @@ pub trait ParserExt2<I, O, E>: ParserExt<I, O, E> + Sized {
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
     fn then_opt<F, O2>(self, f: F) -> And<Self, Optional<F>>
-    where
-        F: Parser<I, O2, E>,
-        I: Clone,
+        where
+            F: Parser<I, O2, E>,
+            I: Clone,
     {
         self.then(f.opt())
     }
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
     fn then_cut<F, O2>(self, f: F) -> And<Self, Cut<F>>
-    where
-        F: Parser<I, O2, E>,
-        I: Clone,
+        where
+            F: Parser<I, O2, E>,
+            I: Clone,
     {
         self.then(f.cut())
     }
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
     fn ignore_then_cut<F, O2>(self, f: F) -> Preceded<Cut<F>, Self, O>
-    where
-        F: Parser<I, O2, E>,
-        I: Clone,
+        where
+            F: Parser<I, O2, E>,
+            I: Clone,
     {
         self.ignore_then(f.cut())
     }
     fn delim_by<L, R, OL, OR>(self, l: L, r: R) -> MyDelim<Self, L, OL, R, OR>
-    where
-        L: Parser<I, OL, E> + Copy + Clone + Sized,
-        R: Parser<I, OR, E> + Copy + Clone + Sized,
+        where
+            L: Parser<I, OL, E> + Copy + Clone + Sized,
+            R: Parser<I, OR, E> + Copy + Clone + Sized,
     {
         MyDelim {
             parser: self,
@@ -387,6 +389,7 @@ pub trait ParserExt2<I, O, E>: ParserExt<I, O, E> + Sized {
         }
     }
 }
+
 impl<I, O, E, P> ParserExt2<I, O, E> for P where P: Parser<I, O, E> {}
 
 pub trait MyParserExt<'a, O>: Parser<&'a [u8], O, ET<'a>> + Sized {
@@ -422,6 +425,7 @@ pub trait MyParserExt<'a, O>: Parser<&'a [u8], O, ET<'a>> + Sized {
         self.delim_by(ctrl('<'), ctrl('>'))
     }
 }
+
 impl<'a, O, P: Parser<&'a [u8], O, ET<'a>>> MyParserExt<'a, O> for P {}
 
 // these classes allow for simple syntax when writing parsers while allowing for good error handling in list1_sep_by
@@ -430,6 +434,7 @@ pub struct UntermT<F, Sep> {
     f: F,
     sep: Sep,
 }
+
 pub struct OptUntermT<F, Sep> {
     ut: UntermT<F, Sep>,
 }
@@ -439,6 +444,7 @@ pub type Unterm<T> = UntermT<T, CtrlC>;
 pub struct Many1<F> {
     f: F,
 }
+
 pub struct Many0<F> {
     f: F,
 }
@@ -446,44 +452,44 @@ pub struct Many0<F> {
 impl<F, Sep> UntermT<F, Sep> {
     #[inline]
     pub fn make<I, OF, OS, E>(f: F, sep: Sep) -> Self
-    where
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        Sep: Parser<I, OS, E> + Copy + Clone + Sized,
+        where
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            Sep: Parser<I, OS, E> + Copy + Clone + Sized,
     {
         UntermT { f, sep }
     }
 
     #[inline]
     pub fn p<I, OF, OS, E>(self) -> impl Parser<I, SepList1<OF, OS>, E>
-    where
-        I: Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        Sep: Parser<I, OS, E> + Copy + Clone + Sized,
+        where
+            I: Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            Sep: Parser<I, OS, E> + Copy + Clone + Sized,
     {
         collect_separated_terminated(self.f, self.sep, peek(not(self.sep))).map(|(a, _)| a)
     }
 
     #[inline]
     pub fn terminated<I, OF, OS, G, OG, E>(self, term: G) -> impl Parser<I, (SepList1<OF, OS>, OG), E>
-    where
-        I: Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        G: Parser<I, OG, E>,
-        Sep: Parser<I, OS, E> + Copy + Clone + Sized,
+        where
+            I: Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            G: Parser<I, OG, E>,
+            Sep: Parser<I, OS, E> + Copy + Clone + Sized,
     {
         collect_separated_terminated(self.f, self.sep, term)
     }
 
     #[inline]
     pub fn opt<I, OF, OS, E>(self) -> OptUntermT<F, Sep>
-    where
-        I: Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        Sep: Parser<I, OS, E> + Copy + Clone + Sized,
+        where
+            I: Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            Sep: Parser<I, OS, E> + Copy + Clone + Sized,
     {
         OptUntermT::make(self)
     }
@@ -492,23 +498,23 @@ impl<F, Sep> UntermT<F, Sep> {
 impl<F, Sep> OptUntermT<F, Sep> {
     #[inline]
     pub fn make<I, OF, OS, E>(ut: UntermT<F, Sep>) -> Self
-    where
-        I: Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        Sep: Parser<I, OS, E> + Copy + Clone + Sized,
+        where
+            I: Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            Sep: Parser<I, OS, E> + Copy + Clone + Sized,
     {
         OptUntermT { ut }
     }
 
     #[inline]
     pub fn terminated<I, OF, OS, G, OG, E>(self, term: G) -> impl Parser<I, (Option<SepList1<OF, OS>>, OG), E>
-    where
-        I: Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        G: Parser<I, OG, E> + Copy + Clone + Sized,
-        Sep: Parser<I, OS, E> + Copy + Clone + Sized,
+        where
+            I: Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            G: Parser<I, OG, E> + Copy + Clone + Sized,
+            Sep: Parser<I, OS, E> + Copy + Clone + Sized,
     {
         alt((
             self.ut.term_by(term).map(|(v, t)| (Some(v), t)),
@@ -520,20 +526,20 @@ impl<F, Sep> OptUntermT<F, Sep> {
 impl<F> Many1<F> {
     #[inline]
     pub fn make<I, OF, E>(f: F) -> Self
-    where
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
+        where
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
     {
         Many1 { f }
     }
 
     #[inline]
     pub fn terminated<I, OF, G, OG, E>(self, terminator: G) -> impl Parser<I, (Vec<OF>, OG), E>
-    where
-        I: nom::InputIter + nom::InputTake + Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        G: Parser<I, OG, E>,
+        where
+            I: nom::InputIter + nom::InputTake + Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            G: Parser<I, OG, E>,
     {
         parse_separated_terminated(
             self.f,
@@ -549,12 +555,12 @@ impl<F> Many1<F> {
 
     #[inline]
     pub fn term_by_peek_alt2<I, OF, G, OG, H, OH, E>(self, term1: G, term2: H) -> impl Parser<I, Vec<OF>, E>
-    where
-        I: nom::InputIter + nom::InputTake + Offset + Slice<RangeTo<usize>> + Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        G: Parser<I, OG, E>,
-        H: Parser<I, OH, E>,
+        where
+            I: nom::InputIter + nom::InputTake + Offset + Slice<RangeTo<usize>> + Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            G: Parser<I, OG, E>,
+            H: Parser<I, OH, E>,
     {
         self.terminated(peek(recognize(term1).or(recognize(term2))))
             .map(|(a, _)| a)
@@ -564,20 +570,20 @@ impl<F> Many1<F> {
 impl<F> Many0<F> {
     #[inline]
     pub fn make<I, OF, E>(f: F) -> Self
-    where
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
+        where
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
     {
         Many0 { f }
     }
 
     #[inline]
     fn terminated_x2<I, OF, G, OG, E>(self, terminator1: G, terminator2: G) -> impl Parser<I, (Vec<OF>, OG), E>
-    where
-        I: nom::InputIter + nom::InputTake + Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        G: Parser<I, OG, E>,
+        where
+            I: nom::InputIter + nom::InputTake + Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            G: Parser<I, OG, E>,
     {
         alt((
             terminator1.map(|t| (Vec::new(), t)),
@@ -596,33 +602,33 @@ impl<F> Many0<F> {
 
     #[inline]
     fn terminated<I, OF, G, OG, E>(self, terminator: G) -> impl Parser<I, (Vec<OF>, OG), E>
-    where
-        I: nom::InputIter + nom::InputTake + Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        G: Parser<I, OG, E> + Copy + Clone,
+        where
+            I: nom::InputIter + nom::InputTake + Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            G: Parser<I, OG, E> + Copy + Clone,
     {
         self.terminated_x2(terminator, terminator)
     }
     #[inline]
     pub fn terminated_fn<I, OF, G, OG, H, E>(self, terminator: H) -> impl Parser<I, (Vec<OF>, OG), E>
-    where
-        I: nom::InputIter + nom::InputTake + Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        H: Fn() -> G,
-        G: Parser<I, OG, E>,
+        where
+            I: nom::InputIter + nom::InputTake + Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            H: Fn() -> G,
+            G: Parser<I, OG, E>,
     {
         self.terminated_x2(terminator(), terminator())
     }
 
     #[inline]
     pub fn term_by_peek_not<I, OF, G, OG, E>(self, not_term: G) -> impl Parser<I, Vec<OF>, E>
-    where
-        I: nom::InputIter + nom::InputTake + Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        G: Parser<I, OG, E> + Copy + Clone,
+        where
+            I: nom::InputIter + nom::InputTake + Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            G: Parser<I, OG, E> + Copy + Clone,
     {
         self.terminated_x2(peek(not(not_term)), peek(not(not_term)))
             .map(|(a, _)| a)
@@ -630,34 +636,34 @@ impl<F> Many0<F> {
 
     #[inline]
     pub fn term_by_peek_not_alt2<I, OF, G, OG, H, OH, E>(self, not_term1: G, not_term2: H) -> impl Parser<I, Vec<OF>, E>
-    where
-        I: nom::InputIter + nom::InputTake + Offset + Slice<RangeTo<usize>> + Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        G: Parser<I, OG, E> + Copy + Clone,
-        H: Parser<I, OH, E> + Copy + Clone,
+        where
+            I: nom::InputIter + nom::InputTake + Offset + Slice<RangeTo<usize>> + Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            G: Parser<I, OG, E> + Copy + Clone,
+            H: Parser<I, OH, E> + Copy + Clone,
     {
         self.terminated_x2(
             peek(not(recognize(not_term1).or(recognize(not_term2)))),
             peek(not(recognize(not_term1).or(recognize(not_term2)))),
         )
-        .map(|(a, _)| a)
+            .map(|(a, _)| a)
     }
 
     #[inline]
     pub fn term_by_peek_alt2<I, OF, G, OG, H, OH, E>(self, not_term1: G, not_term2: H) -> impl Parser<I, Vec<OF>, E>
-    where
-        I: nom::InputIter + nom::InputTake + Offset + Slice<RangeTo<usize>> + Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        G: Parser<I, OG, E> + Copy + Clone,
-        H: Parser<I, OH, E> + Copy + Clone,
+        where
+            I: nom::InputIter + nom::InputTake + Offset + Slice<RangeTo<usize>> + Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            G: Parser<I, OG, E> + Copy + Clone,
+            H: Parser<I, OH, E> + Copy + Clone,
     {
         self.terminated_x2(
             peek(recognize(not_term1).or(recognize(not_term2))),
             peek(recognize(not_term1).or(recognize(not_term2))),
         )
-        .map(|(a, _)| a)
+            .map(|(a, _)| a)
     }
 }
 
@@ -666,12 +672,12 @@ impl<F> Many0<F> {
 impl<F, Sep> UntermT<F, Sep> {
     #[inline]
     pub fn term_by<I, OF, OS, G, OG, E>(self, term: G) -> impl Parser<I, (SepList1<OF, OS>, OG), E>
-    where
-        I: Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        G: Parser<I, OG, E>,
-        Sep: Parser<I, OS, E> + Copy + Clone + Sized,
+        where
+            I: Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            G: Parser<I, OG, E>,
+            Sep: Parser<I, OS, E> + Copy + Clone + Sized,
     {
         self.terminated(term)
     }
@@ -682,13 +688,13 @@ impl<F, Sep> UntermT<F, Sep> {
         term1: G,
         term2: H,
     ) -> impl Parser<I, SepList1<OF, OS>, E>
-    where
-        I: Clone + InputLength + Offset + Slice<RangeTo<usize>>,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        G: Parser<I, OG, E>,
-        H: Parser<I, OH, E>,
-        Sep: Parser<I, OS, E> + Copy + Clone + Sized,
+        where
+            I: Clone + InputLength + Offset + Slice<RangeTo<usize>>,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            G: Parser<I, OG, E>,
+            H: Parser<I, OH, E>,
+            Sep: Parser<I, OS, E> + Copy + Clone + Sized,
     {
         self.terminated(peek(alt((recognize(term1), recognize(term2)))))
             .map(|(a, _)| a)
@@ -696,13 +702,13 @@ impl<F, Sep> UntermT<F, Sep> {
 
     #[inline]
     pub fn delim_by<I, OF, OS, L, OL, R, OR, E>(self, l: L, r: R) -> impl Parser<I, (OL, SepList1<OF, OS>, OR), E>
-    where
-        I: Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        L: Parser<I, OL, E>,
-        R: Parser<I, OR, E>,
-        Sep: Parser<I, OS, E> + Copy + Clone + Sized,
+        where
+            I: Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            L: Parser<I, OL, E>,
+            R: Parser<I, OR, E>,
+            Sep: Parser<I, OS, E> + Copy + Clone + Sized,
     {
         l.then(self.terminated(r)).map(|(a, (b, c))| (a, b, c))
     }
@@ -711,25 +717,25 @@ impl<F, Sep> UntermT<F, Sep> {
 
     #[inline]
     pub fn parened<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl, SepList1<OF, OS>, Ctrl), ET<'a>>
-    where
-        F: Parser<&'a [u8], OF, ET<'a>>,
-        Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
+        where
+            F: Parser<&'a [u8], OF, ET<'a>>,
+            Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
     {
         self.delim_by(ctrl('('), ctrl(')'))
     }
     #[inline]
     pub fn braced<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl, SepList1<OF, OS>, Ctrl), ET<'a>>
-    where
-        F: Parser<&'a [u8], OF, ET<'a>>,
-        Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
+        where
+            F: Parser<&'a [u8], OF, ET<'a>>,
+            Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
     {
         self.delim_by(ctrl('{'), ctrl('}'))
     }
     #[inline]
     pub fn ang_braced<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl, SepList1<OF, OS>, Ctrl), ET<'a>>
-    where
-        F: Parser<&'a [u8], OF, ET<'a>>,
-        Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
+        where
+            F: Parser<&'a [u8], OF, ET<'a>>,
+            Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
     {
         self.delim_by(ctrl('<'), ctrl('>'))
     }
@@ -746,12 +752,12 @@ impl<F, Sep> UntermT<F, Sep> {
 impl<F, Sep> OptUntermT<F, Sep> {
     #[inline]
     pub fn term_by<I, OF, OS, G, OG, E>(self, term: G) -> impl Parser<I, (Option<SepList1<OF, OS>>, OG), E>
-    where
-        I: Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        G: Parser<I, OG, E> + Copy + Clone + Sized,
-        Sep: Parser<I, OS, E> + Copy + Clone + Sized,
+        where
+            I: Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            G: Parser<I, OG, E> + Copy + Clone + Sized,
+            Sep: Parser<I, OS, E> + Copy + Clone + Sized,
     {
         self.terminated(term)
     }
@@ -762,13 +768,13 @@ impl<F, Sep> OptUntermT<F, Sep> {
         l: L,
         r: R,
     ) -> impl Parser<I, (OL, Option<SepList1<OF, OS>>, OR), E>
-    where
-        I: Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        L: Parser<I, OL, E> + Copy + Clone + Sized,
-        R: Parser<I, OR, E> + Copy + Clone + Sized,
-        Sep: Parser<I, OS, E> + Copy + Clone + Sized,
+        where
+            I: Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            L: Parser<I, OL, E> + Copy + Clone + Sized,
+            R: Parser<I, OR, E> + Copy + Clone + Sized,
+            Sep: Parser<I, OS, E> + Copy + Clone + Sized,
     {
         l.then(self.term_by(r)).map(|(a, (b, c))| (a, b, c))
     }
@@ -777,17 +783,17 @@ impl<F, Sep> OptUntermT<F, Sep> {
     //
     #[inline]
     pub fn parened<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl, Option<SepList1<OF, OS>>, Ctrl), ET<'a>>
-    where
-        F: Parser<&'a [u8], OF, ET<'a>>,
-        Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
+        where
+            F: Parser<&'a [u8], OF, ET<'a>>,
+            Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
     {
         self.delim_by(ctrl('('), ctrl(')'))
     }
     #[inline]
     pub fn braced<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl, Option<SepList1<OF, OS>>, Ctrl), ET<'a>>
-    where
-        F: Parser<&'a [u8], OF, ET<'a>>,
-        Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
+        where
+            F: Parser<&'a [u8], OF, ET<'a>>,
+            Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
     {
         self.delim_by(ctrl('{'), ctrl('}'))
     }
@@ -796,23 +802,23 @@ impl<F, Sep> OptUntermT<F, Sep> {
 impl<F> Many0<F> {
     #[inline]
     pub fn term_by<I, OF, G, OG, E>(self, term: G) -> impl Parser<I, (Vec<OF>, OG), E>
-    where
-        I: nom::InputIter + nom::InputTake + Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        G: Parser<I, OG, E> + Copy + Clone + Sized,
+        where
+            I: nom::InputIter + nom::InputTake + Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            G: Parser<I, OG, E> + Copy + Clone + Sized,
     {
         self.terminated(term)
     }
 
     #[inline]
     pub fn delim_by<I, OF, L, OL, R, OR, E>(self, l: L, r: R) -> impl Parser<I, (OL, Vec<OF>, OR), E>
-    where
-        I: nom::InputIter + nom::InputTake + Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        L: Parser<I, OL, E>,
-        R: Parser<I, OR, E> + Clone + Copy,
+        where
+            I: nom::InputIter + nom::InputTake + Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            L: Parser<I, OL, E>,
+            R: Parser<I, OR, E> + Clone + Copy,
     {
         l.then(self.terminated(r)).map(|(a, (b, c))| (a, b, c))
     }
@@ -821,8 +827,8 @@ impl<F> Many0<F> {
 
     #[inline]
     pub fn braced<'a, OF>(self) -> impl Parser<&'a [u8], (Ctrl, Vec<OF>, Ctrl), ET<'a>>
-    where
-        F: Parser<&'a [u8], OF, ET<'a>>,
+        where
+            F: Parser<&'a [u8], OF, ET<'a>>,
     {
         self.delim_by(ctrl('{'), ctrl('}'))
     }
@@ -831,23 +837,23 @@ impl<F> Many0<F> {
 impl<F> Many1<F> {
     #[inline]
     pub fn term_by<I, OF, G, OG, E>(self, term: G) -> impl Parser<I, (Vec<OF>, OG), E>
-    where
-        I: nom::InputIter + nom::InputTake + Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        G: Parser<I, OG, E> + Copy + Clone + Sized,
+        where
+            I: nom::InputIter + nom::InputTake + Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            G: Parser<I, OG, E> + Copy + Clone + Sized,
     {
         self.terminated(term)
     }
 
     #[inline]
     pub fn delim_by<I, OF, L, OL, R, OR, E>(self, l: L, r: R) -> impl Parser<I, (OL, Vec<OF>, OR), E>
-    where
-        I: nom::InputIter + nom::InputTake + Clone + InputLength,
-        E: ParseError<I> + ContextError<I>,
-        F: Parser<I, OF, E>,
-        L: Parser<I, OL, E>,
-        R: Parser<I, OR, E>,
+        where
+            I: nom::InputIter + nom::InputTake + Clone + InputLength,
+            E: ParseError<I> + ContextError<I>,
+            F: Parser<I, OF, E>,
+            L: Parser<I, OL, E>,
+            R: Parser<I, OR, E>,
     {
         l.then(self.terminated(r)).map(|(a, (b, c))| (a, b, c))
     }
@@ -856,8 +862,8 @@ impl<F> Many1<F> {
 
     #[inline]
     pub fn braced<'a, OF>(self) -> impl Parser<&'a [u8], (Ctrl, Vec<OF>, Ctrl), ET<'a>>
-    where
-        F: Parser<&'a [u8], OF, ET<'a>>,
+        where
+            F: Parser<&'a [u8], OF, ET<'a>>,
     {
         self.delim_by(ctrl('{'), ctrl('}'))
     }

@@ -1,0 +1,9 @@
+[package]
+name = "act_fmt"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lex_parse = { path = "../lex_parse" }
+pretty = "0.11.3"
+itertools = "0.10.3"

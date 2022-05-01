@@ -1,16 +1,28 @@
-use super::basic::{ast::*, *};
-use crate::parser::utils::{MyParserExt, ParserExt2, ET};
 use nom::{
     branch::alt,
     combinator::{not, peek},
-    sequence::tuple,
-    IResult, Parser,
+    IResult,
+    Parser, sequence::tuple,
 };
 use nom_supreme::parser_ext::ParserExt;
 
+pub use lang_chp_hse::{hse_body, lang_chp, lang_hse};
+pub use lang_dataflow::lang_dataflow;
+pub use lang_initialize::lang_initialize;
+pub use lang_prs::lang_prs;
+pub use lang_sizing::lang_sizing;
+pub use lang_spec::lang_spec;
+
+use crate::utils::{ET, MyParserExt, ParserExt2};
+
+use super::basic::{*, ast::*};
+
 mod lang_chp_hse {
+    use ast::*;
+
+    use crate::utils::{SepList1, Unterm};
+
     use super::*;
-    use crate::parser::utils::{SepList1, Unterm};
 
     pub mod ast {
         use super::*;
@@ -32,11 +44,13 @@ mod lang_chp_hse {
 
         #[derive(Debug)]
         pub struct ChpItem(pub Option<(Ident, CtrlColon)>, pub ChpStmt);
+
         #[derive(Debug)]
         pub struct ChpItemList(pub SepList1<SepList1<ChpItem, CtrlComma>, CtrlSemi>);
 
         #[derive(Debug)]
         pub struct AssignStmt(pub ExprId, pub Ctrl /* := */, pub Expr);
+
         #[derive(Debug)]
         pub struct AssignBoolDirStmt(pub ExprId, pub (Dir, Ctrl));
 
@@ -67,18 +81,21 @@ mod lang_chp_hse {
             Plus,
             Minus,
         }
+
         #[derive(Debug, Copy, Clone)]
         pub enum RecvType {
             Normal,
             Plus,
             Minus,
         }
+
         #[derive(Debug)]
         pub enum RecvTypeCast {
             AsInt(Kw, CtrlLParen, ExprId, CtrlRParen),
             AsBool(Kw, CtrlLParen, ExprId, CtrlRParen),
             Ident(ExprId),
         }
+
         #[derive(Debug)]
         pub struct SendStmt(
             pub ExprId,
@@ -86,6 +103,7 @@ mod lang_chp_hse {
             pub Option<Expr>,
             pub Option<((RecvType, Ctrl), RecvTypeCast)>,
         );
+
         #[derive(Debug)]
         pub struct RecvStmt(
             pub ExprId,
@@ -139,8 +157,10 @@ mod lang_chp_hse {
             Body(HseItemList),
             Labeled(SepList1<LabeledHseBody, CtrlSemi>),
         }
+
         #[derive(Debug)]
         pub struct HseItemList(pub ChpItemList);
+
         #[derive(Debug)]
         pub struct LangHse(
             pub Kw,
@@ -151,23 +171,22 @@ mod lang_chp_hse {
         );
     }
 
-    use ast::*;
-
     fn send_type(i: &[u8]) -> IResult<&[u8], (SendType, Ctrl), ET> {
         alt((
             ctrl2('!', '+').map(|v| (SendType::Plus, v)),
             ctrl2('!', '-').map(|v| (SendType::Minus, v)),
             ctrl('!').map(|v| (SendType::Normal, v)),
         ))
-        .parse(i)
+            .parse(i)
     }
+
     fn recv_type(i: &[u8]) -> IResult<&[u8], (RecvType, Ctrl), ET> {
         alt((
             ctrl2('?', '+').map(|v| (RecvType::Plus, v)),
             ctrl2('?', '-').map(|v| (RecvType::Minus, v)),
             ctrl('?').map(|v| (RecvType::Normal, v)),
         ))
-        .parse(i)
+            .parse(i)
     }
 
     // chp_body: { chp_comma_list ";" }*
@@ -194,8 +213,9 @@ mod lang_chp_hse {
                 .map(|(a, (b, c, d))| RecvTypeCast::AsInt(a, b, c, d)),
             expr_id.map(RecvTypeCast::Ident),
         ))
-        .parse(i)
+            .parse(i)
     }
+
     pub fn chp_stmt(i: &[u8]) -> IResult<&[u8], ChpStmt, ET> {
         // These all begin with a unique token
         // skip -> `skip`   `[` or `*[`
@@ -300,9 +320,10 @@ mod lang_chp_hse {
             uncut(dotted_call),
             uncut(chp_stmt_after_ei),
         ))
-        .context("chp stmt")
-        .parse(i)
+            .context("chp stmt")
+            .parse(i)
     }
+
     pub fn chp_item(i: &[u8]) -> IResult<&[u8], ChpItem, ET> {
         let is_labeled_detector = peek(ident.then(ctrl(':')).then(not(ctrl('='))));
         let label = ident.then(ctrl(':'));
@@ -314,7 +335,7 @@ mod lang_chp_hse {
             // Otherwise it is an unlabeled statement
             chp_stmt.map(|stmt| ChpItem(None, stmt)),
         ))
-        .parse(i)
+            .parse(i)
     }
 
     fn chp_item_list1<'a>() -> Unterm<impl Parser<&'a [u8], SepList1<ChpItem, CtrlComma>, ET<'a>>> {
@@ -446,7 +467,7 @@ mod lang_chp_hse {
                 .context("labeled hse bodies"),
             hse_body.map(HseBodies::Body).context("normal hse body"),
         ))
-        .parse(i)
+            .parse(i)
     }
 
     // lang_chp: "chp" [ supply_spec ] "{" [ chp_body ] "}"
@@ -474,6 +495,7 @@ mod lang_chp_hse {
 }
 
 mod lang_prs {
+    use ast::*;
 
     use super::*;
 
@@ -507,6 +529,7 @@ mod lang_prs {
             N,
             P,
         }
+
         #[derive(Debug)]
         pub enum PrsItem {
             Rule(PrsExpr, (ArrowKind, Ctrl), ExprId, (Dir, Ctrl)),
@@ -547,8 +570,10 @@ mod lang_prs {
 
         #[derive(Debug)]
         pub struct PrsBodyRow(pub Option<BracketedAttrList>, pub PrsItem);
+
         #[derive(Debug)]
         pub struct PrsBody(pub Vec<PrsBodyRow>);
+
         #[derive(Debug)]
         pub struct LangPrs(
             pub Kw,
@@ -560,8 +585,6 @@ mod lang_prs {
         );
     }
 
-    use ast::*;
-
     // arrow: {excl}
     //       "->"
     //      | "=>"
@@ -572,7 +595,7 @@ mod lang_prs {
             ctrl2('=', '>').map(|v| (ArrowKind::Equals, v)),
             ctrl2('#', '>').map(|v| (ArrowKind::Hash, v)),
         ))
-        .parse(i)
+            .parse(i)
     }
 
     // prs_body: {t-rec}
@@ -649,8 +672,8 @@ mod lang_prs {
             kw("passn").map(|v| (PassNPKind::N, v)),
             kw("passp").map(|v| (PassNPKind::P, v)),
         ))
-        .then_cut(size_spec.opt().then(expr_id_comma_3_tuple))
-        .map(|(a, (b, (c, d, e, f, g, h, i)))| PrsItem::Pass(a, b, c, d, e, f, g, h, i));
+            .then_cut(size_spec.opt().then(expr_id_comma_3_tuple))
+            .map(|(a, (b, (c, d, e, f, g, h, i)))| PrsItem::Pass(a, b, c, d, e, f, g, h, i));
         let transgate = kw("transgate")
             .then_cut(size_spec.opt().then(expr_id_comma_4_tuple))
             .map(|(a, (b, (c, d, e, f, g, h, i, j, k)))| PrsItem::TransGate(a, b, c, d, e, f, g, h, i, j, k));
@@ -706,7 +729,7 @@ mod lang_prs {
             uncut(at_rule.context("at rule")),
             uncut(sub_block.context("subblock")),
         ))
-        .parse(i)
+            .parse(i)
     }
 
     #[inline]
@@ -731,11 +754,14 @@ mod lang_prs {
 }
 
 mod lang_spec {
+    use ast::*;
+
     use super::*;
 
     pub mod ast {
+        use crate::utils::SepList1;
+
         use super::*;
-        use crate::parser::utils::SepList1;
 
         #[derive(Debug, Clone, Copy)]
         pub enum TimingType {
@@ -746,6 +772,7 @@ mod lang_spec {
 
         #[derive(Debug)]
         pub struct TimingBodyClause(pub ExprId, pub Option<CtrlStar>, pub Option<(Dir, Ctrl)>);
+
         #[derive(Debug)]
         pub struct TimingBody(
             pub TimingBodyClause,
@@ -775,8 +802,6 @@ mod lang_spec {
         pub struct LangSpec(pub Kw, pub SpecBody);
     }
 
-    use ast::*;
-
     // spec_body: [ requires_clause ] [ ensures_clause ] [ generic_clause ]
     // requires_clause: "requires" "{" base_spec_body "}"
     // ensures_clause: "ensures" "{" base_spec_body "}"
@@ -801,6 +826,7 @@ mod lang_spec {
             .map(|((a, b), c)| TimingBodyClause(a, b, c))
             .parse(i)
     }
+
     fn timing_item_body(i: &[u8]) -> IResult<&[u8], TimingBody, ET> {
         // "timing" [ expr_id [ dir ] ":" ] [ "?" ] expr_id [ "*" ] [ dir ]
         //            timing_type [ "[" expr "]" ] expr_id [ "*" ] [ dir ]
@@ -831,6 +857,7 @@ mod lang_spec {
             .map(|((((a, (b, c)), d), e), f)| TimingBody(a, b, c, d, e, f))
             .parse(i)
     }
+
     fn spec_item(i: &[u8]) -> IResult<&[u8], SpecItem, ET> {
         // TODO is this right?
         let normal_item = ident
@@ -867,11 +894,14 @@ mod lang_spec {
 }
 
 mod lang_dataflow {
+    use ast::*;
+
     use super::*;
 
     pub mod ast {
+        use crate::utils::SepList1;
+
         use super::*;
-        use crate::parser::utils::SepList1;
 
         #[derive(Debug, Clone, Copy)]
         pub enum BracketedOrParened {
@@ -909,7 +939,7 @@ mod lang_dataflow {
         pub struct DataflowOrdering(
             pub Ident,
             pub CtrlLBrace,
-            pub  SepList1<
+            pub SepList1<
                 (
                     SepList1<ExprId, CtrlComma>,
                     Ctrl, /* < */
@@ -919,6 +949,7 @@ mod lang_dataflow {
             >,
             pub CtrlRBrace,
         );
+
         #[derive(Debug)]
         pub struct LangDataflow(
             pub Kw,
@@ -928,8 +959,6 @@ mod lang_dataflow {
             pub CtrlRBrace,
         );
     }
-
-    use ast::*;
 
     // lang_dataflow: "dataflow" "{" [ dataflow_ordering ] { dataflow_items ";" }* "}"
     // dataflow_ordering: ID "{" { order_list ";" }* "}"
@@ -981,7 +1010,7 @@ mod lang_dataflow {
             uncut(braced_flow),
             uncut(sink),
         ))
-        .parse(i)
+            .parse(i)
     }
 
     pub fn lang_dataflow(i: &[u8]) -> IResult<&[u8], LangDataflow, ET> {
@@ -1010,17 +1039,21 @@ mod lang_dataflow {
 }
 
 mod lang_initialize {
+    use ast::*;
+
     use super::{
-        lang_chp_hse::{ast::HseItemList, hse_body},
         *,
-    };
+        lang_chp_hse::{ast::HseItemList, hse_body},
+        };
 
     pub mod ast {
+        use crate::utils::SepList1;
+
         use super::*;
-        use crate::parser::utils::SepList1;
 
         #[derive(Debug)]
         pub struct ActionItem(pub Ident, pub CtrlLBrace, pub HseItemList, pub CtrlRBrace);
+
         #[derive(Debug)]
         pub struct LangInitialize(
             pub Kw,
@@ -1029,8 +1062,6 @@ mod lang_initialize {
             pub CtrlRBrace,
         );
     }
-
-    use ast::*;
 
     // lang_initialize: "Initialize" "{" { action_items ";" }* "}"
     // action_items: ID "{" hse_body "}"
@@ -1047,10 +1078,15 @@ mod lang_initialize {
 }
 
 mod lang_sizing {
+    use ast::*;
+
     use super::*;
+
     pub mod ast {
+        use crate::utils::SepList1;
+
         use super::*;
-        use crate::parser::utils::SepList1;
+
         #[derive(Debug)]
         pub struct DirectivePart(
             pub (Dir, Ctrl),
@@ -1070,6 +1106,7 @@ mod lang_sizing {
             ),
             DirectiveMacroLoop(MacroLoop<CtrlSemi, SepList1<SizingItem, CtrlSemi>>),
         }
+
         #[derive(Debug)]
         pub struct LangSizing(
             pub Kw,
@@ -1078,7 +1115,6 @@ mod lang_sizing {
             pub CtrlRBrace,
         );
     }
-    use ast::*;
 
     // size_setup: ID "<-" expr
     //           | NOTHING
@@ -1141,9 +1177,4 @@ pub mod ast {
     pub use super::lang_sizing::ast::*;
     pub use super::lang_spec::ast::*;
 }
-pub use lang_chp_hse::{hse_body, lang_chp, lang_hse};
-pub use lang_dataflow::lang_dataflow;
-pub use lang_initialize::lang_initialize;
-pub use lang_prs::lang_prs;
-pub use lang_sizing::lang_sizing;
-pub use lang_spec::lang_spec;
+

@@ -3,6 +3,15 @@
 version = 3
 
 [[package]]
+name = "act_fmt"
+version = "0.1.0"
+dependencies = [
+ "itertools",
+ "lex_parse",
+ "pretty",
+]
+
+[[package]]
 name = "ariadne"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -165,6 +174,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
 
 [[package]]
+name = "lex_parse"
+version = "0.1.0"
+dependencies = [
+ "nom",
+ "nom-supreme",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.124"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -278,12 +295,12 @@ dependencies = [
 name = "rust_act"
 version = "0.1.0"
 dependencies = [
+ "act_fmt",
  "ariadne",
  "clap",
- "itertools",
+ "lex_parse",
  "nom",
  "nom-supreme",
- "pretty",
 ]
 
 [[package]]

@@ -3,9 +3,11 @@ name = "rust_act"
 version = "0.1.0"
 edition = "2018"
 
-[lib]
-name = "mylib"
-path = "src/lib.rs"
+[workspace]
+members = [
+    "lex_parse",
+    "act_fmt",
+]
 
 [[bin]]
 name = "act-fmt"
@@ -14,13 +16,14 @@ path = "src/main.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-nom = "7"
+lex_parse = { path = "lex_parse" }
+act_fmt = { path = "act_fmt" }
 ariadne = "0.1.2"
-nom-supreme = "0.6.0"
-pretty = "0.11.3"
-itertools="0.10.3"
 clap = { version = "3.1.12", features = ["derive"] }
 
+nom = "7"
+nom-supreme = "0.6.0"
+
 [profile.release]
-#lto = true
-#strip=true
+lto = true
+strip = true

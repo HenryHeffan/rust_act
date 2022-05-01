@@ -1,8 +1,10 @@
-use super::utils::*;
-use crate::parser::ast::*;
-use crate::token::Token;
-use crate::{FlatToken, WhitespaceKind};
+extern crate lex_parse;
+
 use itertools::Itertools;
+
+use lex_parse::{ast::*, ParseTree};
+
+use super::utils::*;
 
 impl PrAble for Ctrl {
     fn pr(&self) -> Pra {
@@ -13,21 +15,25 @@ impl PrAble for Ctrl {
         }
     }
 }
+
 impl PrAble for Ident {
     fn pr(&self) -> Pra {
         Pra::from_tok(self.0)
     }
 }
+
 impl PrAble for Kw {
     fn pr(&self) -> Pra {
         Pra::from_tok(self.0)
     }
 }
+
 impl PrAble for Num {
     fn pr(&self) -> Pra {
         Pra::from_tok(self.0)
     }
 }
+
 impl PrAble for StrTok {
     fn pr(&self) -> Pra {
         Pra::from_tok(self.0)
@@ -88,6 +94,7 @@ impl PrAble for NonChanTypeName {
         }
     }
 }
+
 impl PrAble for NonChanType {
     fn pr(&self) -> Pra {
         let NonChanType(kw, chan_dir, opt_template) = self;
@@ -146,6 +153,7 @@ impl PrAble for BaseId {
         ))
     }
 }
+
 impl PrAble for ExprId {
     fn pr(&self) -> Pra {
         let ExprId(ids) = self;
@@ -346,6 +354,7 @@ impl PrAble for InterfaceSpecItem {
         ))
     }
 }
+
 impl PrAble for InterfaceSpec {
     fn pr(&self) -> Pra {
         let InterfaceSpec(items) = self;
@@ -379,7 +388,8 @@ impl PrAble for EnumBody {
         }
     }
 }
-impl DefEnum {
+
+impl PrChunkAble for DefEnum {
     fn prc(&self) -> PraChunk {
         let DefEnum(kw, id, body) = self;
         let p = concat((kw, space(), id, body));
@@ -461,7 +471,7 @@ impl PrAble for InstanceId {
     }
 }
 
-impl Instance {
+impl PrChunkAble for Instance {
     fn prc(&self) -> PraChunk {
         let Instance(tp, ids, semi) = self;
         let p = concat((tp, space(), concat_sep1(ids, soft_line()).nest(NestAmt(2)), semi));
@@ -469,14 +479,14 @@ impl Instance {
     }
 }
 
-impl Connection {
+impl PrChunkAble for Connection {
     fn prc(&self) -> PraChunk {
         let Connection(conn_id, semi) = self;
         concat((conn_id, semi)).chunk()
     }
 }
 
-impl Alias {
+impl PrChunkAble for Alias {
     fn prc(&self) -> PraChunk {
         let Alias(ids, eq, exprs, semi) = self;
         let p = concat((ids, space(), eq, space(), exprs, semi));
@@ -534,20 +544,22 @@ fn format_base_conditional_like(
         concat((lbrac, concat_chunks(line(), chunks, Some(rbrac), NestAmt(0))))
     }
 }
-impl BaseDynamicLoop {
+
+impl PrChunkAble for BaseDynamicLoop {
     fn prc(&self) -> PraChunk {
         let BaseDynamicLoop(lbrac, items, rbrac) = self;
         format_base_conditional_like(lbrac.pr(), nil(), items, rbrac.pr()).chunk()
     }
 }
-impl Conditional {
+
+impl PrChunkAble for Conditional {
     fn prc(&self) -> PraChunk {
         let Conditional(lbrac, items, rbrac) = self;
         format_base_conditional_like(lbrac.pr(), space(), items, rbrac.pr()).chunk()
     }
 }
 
-impl BaseMacroLoop {
+impl PrChunkAble for BaseMacroLoop {
     fn prc(&self) -> PraChunk {
         let BaseMacroLoop(MacroLoop(lparen, semi, id, colon1, range, colon2, items, rparen)) = self;
         let items = items.iter().map(|v| v.prc()).collect_vec();
@@ -565,7 +577,7 @@ impl BaseMacroLoop {
             colon2,
             chunks_then_close_paren,
         ))
-        .chunk()
+            .chunk()
     }
 }
 
@@ -576,6 +588,7 @@ impl PrAble for ConnOp {
         }
     }
 }
+
 impl PrAble for AssertionPart {
     fn pr(&self) -> Pra {
         match self {
@@ -594,12 +607,14 @@ impl PrAble for AssertionPart {
         }
     }
 }
-impl Assertion {
+
+impl PrChunkAble for Assertion {
     fn prc(&self) -> PraChunk {
         let Assertion(lbrace, assertion_part, rbrace, semi) = self;
         concat((lbrace, space(), assertion_part, space(), rbrace, semi)).chunk()
     }
 }
+
 impl PrAble for ExprOrStr {
     fn pr(&self) -> Pra {
         match self {
@@ -608,7 +623,8 @@ impl PrAble for ExprOrStr {
         }
     }
 }
-impl DebugOutput {
+
+impl PrChunkAble for DebugOutput {
     fn prc(&self) -> PraChunk {
         let DebugOutput(lbrace, exprs, rbrace, semi) = self;
         let exprs = concat_sep1(exprs, space());
@@ -630,18 +646,21 @@ impl PrAble for SupplySpec {
         ))
     }
 }
+
 impl PrAble for AssignStmt {
     fn pr(&self) -> Pra {
         let AssignStmt(lhs, eq, rhs) = self;
         group((lhs, space(), eq, soft_line(), rhs.pr())).nest(NestAmt(2))
     }
 }
+
 impl PrAble for AssignBoolDirStmt {
     fn pr(&self) -> Pra {
         let AssignBoolDirStmt(lhs, (_, dir)) = self;
         concat((lhs, dir))
     }
 }
+
 impl PrAble for RecvTypeCast {
     fn pr(&self) -> Pra {
         match self {
@@ -651,6 +670,7 @@ impl PrAble for RecvTypeCast {
         }
     }
 }
+
 impl PrAble for SendStmt {
     fn pr(&self) -> Pra {
         let SendStmt(chan, (_, ctrl1), e1, recv) = self;
@@ -659,6 +679,7 @@ impl PrAble for SendStmt {
         concat((chan, ctrl1, e1, recv))
     }
 }
+
 impl PrAble for RecvStmt {
     fn pr(&self) -> Pra {
         let RecvStmt(chan, (_, ctrl1), e1, recv) = self;
@@ -716,6 +737,7 @@ fn format_chp_conditional_like(lbrac: Pra, extra_space: Pra, items: &SepList1<Gu
         group((lbrac, concat_chunks(nil(), chunks, Some(rbrac), NestAmt(0))))
     }
 }
+
 impl PrAble for ChpBracketedStmt {
     fn pr(&self) -> Pra {
         match self {
@@ -791,6 +813,7 @@ impl PrAble for ChpStmt {
         }
     }
 }
+
 impl PrAble for ChpItem {
     fn pr(&self) -> Pra {
         let ChpItem(label, stmt) = self;
@@ -800,7 +823,8 @@ impl PrAble for ChpItem {
         }
     }
 }
-impl ChpItemList {
+
+impl PrChunkListAble for ChpItemList {
     fn chunks(&self) -> Vec<PraChunk> {
         let ChpItemList(l) = self;
         // each item (with terminator) is its own chunk
@@ -818,7 +842,7 @@ impl ChpItemList {
     }
 }
 
-impl LangChp {
+impl PrChunkAble for LangChp {
     fn prc(&self) -> PraChunk {
         let LangChp(kw, supply_spec, lbrace, items, rbrace) = self;
         let supply_spec = supply_spec.as_ref().map_or(nil(), |spec| concat((space(), spec)));
@@ -833,7 +857,7 @@ impl LangChp {
     }
 }
 
-impl HseBodies {
+impl PrChunkListAble for HseBodies {
     fn chunks(&self) -> Vec<PraChunk> {
         match self {
             HseBodies::Body(items) => items.0.chunks(),
@@ -846,7 +870,8 @@ impl HseBodies {
         }
     }
 }
-impl LangHse {
+
+impl PrChunkAble for LangHse {
     fn prc(&self) -> PraChunk {
         let LangHse(kw, supply_spec, lbrace, bodies, rbrace) = self;
         let supply_spec = supply_spec.as_ref().map_or(nil(), |spec| concat((space(), spec)));
@@ -972,7 +997,7 @@ impl PrAble for PrsItem {
     }
 }
 
-impl PrsBodyRow {
+impl PrChunkAble for PrsBodyRow {
     fn prc(&self) -> PraChunk {
         let PrsBodyRow(attr_list, item) = self;
         let attr_list = attr_list.as_ref().map_or(nil(), |v| concat((v, space())));
@@ -980,14 +1005,14 @@ impl PrsBodyRow {
     }
 }
 
-impl PrsBody {
+impl PrChunkListAble for PrsBody {
     fn chunks(&self) -> Vec<PraChunk> {
         let PrsBody(body_rows) = self;
         body_rows.iter().map(|v| v.prc()).collect_vec()
     }
 }
 
-impl LangPrs {
+impl PrChunkAble for LangPrs {
     fn prc(&self) -> PraChunk {
         let LangPrs(kw, supply_spec, opt_star, lbrace, body, rbrace) = self;
         let supply_spec = supply_spec.as_ref().map_or(nil(), |spec| concat((space(), spec)));
@@ -1009,6 +1034,7 @@ impl PrAble for TimingBodyClause {
         concat((e, star, ctrl))
     }
 }
+
 impl PrAble for TimingBody {
     fn pr(&self) -> Pra {
         let TimingBody(tc1, opt_qmark, tc2, (_, tt), e, tc3) = self;
@@ -1021,7 +1047,8 @@ impl PrAble for TimingBody {
         concat((tc1, qmark_and_tc2, tt, e, tc3))
     }
 }
-impl SpecItem {
+
+impl PrChunkAble for SpecItem {
     fn prc(&self) -> PraChunk {
         match self {
             SpecItem::Normal(id, lparen, eids, rparen) => concat((
@@ -1030,11 +1057,12 @@ impl SpecItem {
                 concat((concat_sep1(eids, line()), line_())).group().nest(NestAmt(2)),
                 rparen,
             ))
-            .chunk(),
+                .chunk(),
             SpecItem::Timing(kw, body) => concat((kw, body)).chunk(),
         }
     }
 }
+
 impl PrAble for SpecBody {
     fn pr(&self) -> Pra {
         let SpecBody {
@@ -1067,14 +1095,15 @@ impl PrAble for SpecBody {
         concat((lbrace, concat_chunks(line(), chunks, Some(rbrace.pr()), NestAmt(2))))
     }
 }
-impl LangSpec {
+
+impl PrChunkAble for LangSpec {
     fn prc(&self) -> PraChunk {
         let LangSpec(kw, body) = self;
         concat((kw, space(), body)).chunk()
     }
 }
 
-impl LangRefine {
+impl PrChunkAble for LangRefine {
     fn prc(&self) -> PraChunk {
         let LangRefine(kw, lbrace, items, rbrace) = self;
         concat((
@@ -1087,7 +1116,7 @@ impl LangRefine {
                 NestAmt(2),
             ),
         ))
-        .chunk()
+            .chunk()
     }
 }
 
@@ -1130,7 +1159,7 @@ impl PrAble for SizingItem {
     }
 }
 
-impl LangSizing {
+impl PrChunkAble for LangSizing {
     fn prc(&self) -> PraChunk {
         let LangSizing(kw, lbrace, items, rbrace) = self;
         let chunks_and_rbrace = concat_chunks(line(), zip_sep1_as_chunks(items, nil()), Some(rbrace.pr()), NestAmt(2));
@@ -1145,7 +1174,8 @@ impl PrAble for ActionItem {
         concat((id, lbrace, chunks_and_rbrace))
     }
 }
-impl LangInitialize {
+
+impl PrChunkAble for LangInitialize {
     fn prc(&self) -> PraChunk {
         let LangInitialize(kw, lbrace, items, rbrace) = self;
         let chunks_and_rbrace = concat_chunks(line(), zip_sep1_as_chunks(items, nil()), Some(rbrace.pr()), NestAmt(2));
@@ -1153,7 +1183,7 @@ impl LangInitialize {
     }
 }
 
-impl DataflowOrdering {
+impl PrChunkAble for DataflowOrdering {
     fn prc(&self) -> PraChunk {
         let DataflowOrdering(id, lbrace, items, rbrace) = self;
         let items = zip_map_sep1_as_chunks(items, nil(), |(ids1, c, ids2)| {
@@ -1169,6 +1199,7 @@ impl DataflowOrdering {
         concat((id, lbrace, chunks_and_rbrace)).chunk()
     }
 }
+
 impl PrAble for ExprIdOrStar {
     fn pr(&self) -> Pra {
         match self {
@@ -1177,6 +1208,7 @@ impl PrAble for ExprIdOrStar {
         }
     }
 }
+
 impl PrAble for ExprIdOrStarOrBar {
     fn pr(&self) -> Pra {
         match self {
@@ -1186,6 +1218,7 @@ impl PrAble for ExprIdOrStarOrBar {
         }
     }
 }
+
 impl PrAble for DataflowItem {
     fn pr(&self) -> Pra {
         match self {
@@ -1216,7 +1249,8 @@ impl PrAble for DataflowItem {
         }
     }
 }
-impl LangDataflow {
+
+impl PrChunkAble for LangDataflow {
     fn prc(&self) -> PraChunk {
         let LangDataflow(kw, lbrace, ordering, items, rbrace) = self;
         let ordering = match ordering {
@@ -1229,7 +1263,7 @@ impl LangDataflow {
     }
 }
 
-impl TopItem {
+impl PrChunkAble for TopItem {
     fn prc(&self) -> PraChunk {
         match self {
             TopItem::Instance(v) => v.prc(),
@@ -1260,7 +1294,7 @@ impl TopItem {
     }
 }
 
-impl MethodsBody {
+impl PrChunkAble for MethodsBody {
     fn prc(&self) -> PraChunk {
         let MethodsBody(kw, lbrace, methods, rbrace) = self;
         match methods.len() {
@@ -1272,7 +1306,7 @@ impl MethodsBody {
                 concat_vec(methods, hard_line()),
                 rbrace,
             ))
-            .chunk(),
+                .chunk(),
             _ => group((kw, space(), lbrace, rbrace)).chunk(),
         }
     }
@@ -1323,7 +1357,7 @@ impl PrAble for ProclikeBody {
     }
 }
 
-impl NamespaceDecl {
+impl PrChunkAble for NamespaceDecl {
     fn prc(&self) -> PraChunk {
         let NamespaceDecl(opt_kw_export, kw_namespace, name, lbrace, items, rbrace) = self;
         let kw_export = opt_kw_export.map_or(nil(), |kw| concat((kw, space())));
@@ -1355,13 +1389,10 @@ impl PrAble for Import {
 }
 
 pub fn print_pretty(
-    ast: &Vec<TopItem>,
-    final_comments: Vec<(WhitespaceKind, &str)>,
-    flat_tokens: &Vec<FlatToken>,
-    tokens: &Vec<Token>,
+    ast: &ParseTree,
     width: usize,
 ) -> Option<String> {
-    let chunks = ast.iter().map(|v| v.prc()).collect_vec();
+    let chunks = ast.ast.iter().map(|v| v.prc()).collect_vec();
     let chunks = concat_chunks(line(), chunks, None, NestAmt(0));
-    as_pretty(chunks, &final_comments, flat_tokens, tokens, width)
+    as_pretty(chunks, &ast.final_comments, &ast.flat_tokens, &ast.tokens, width)
 }

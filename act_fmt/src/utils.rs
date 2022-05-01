@@ -1,11 +1,11 @@
-use crate::ast::{FTPtr, FTStart};
-use crate::parser::ast::SepList1;
-use crate::{FlatToken, Token, WhitespaceKind};
+use std::mem::swap;
+use std::str;
+
 use itertools::EitherOrBoth::*;
 use itertools::Itertools;
 use pretty::{BoxAllocator, DocAllocator, DocBuilder};
-use std::mem::swap;
-use std::str;
+
+use lex_parse::{ast::{FTPtr, FTStart, SepList1}, FlatToken, Token, WhitespaceKind};
 
 // https://docs.rs/pretty/latest/pretty/
 
@@ -26,7 +26,8 @@ pub enum PraSpaceKind {
 pub enum Pra {
     Nil,
     S(PraSpaceKind),
-    Tok(FTPtr), // the index of the token
+    Tok(FTPtr),
+    // the index of the token
     Concat(Vec<Self>),
     Group(Box<Self>),
     Nest(Box<Self>, NestAmt),
@@ -41,6 +42,14 @@ pub trait PrAble {
     fn pr(&self) -> Pra;
 }
 
+pub trait PrChunkAble {
+    fn prc(&self) -> PraChunk;
+}
+
+pub trait PrChunkListAble {
+    fn chunks(&self) -> Vec<PraChunk>;
+}
+
 impl<'a> PrAble for Pra {
     #[inline]
     fn pr(&self) -> Pra {
@@ -49,8 +58,8 @@ impl<'a> PrAble for Pra {
 }
 
 impl<T: PrAble> PrAble for &T
-where
-    T: PrAble,
+    where
+        T: PrAble,
 {
     #[inline]
     fn pr(&self) -> Pra {
@@ -159,6 +168,7 @@ tuple_impls! { A B C D E F G H I J K L M N O P Q R S T }
 pub fn concat<T: PrAbleTuple>(t: T) -> Pra {
     t.pr_tup()
 }
+
 #[inline]
 pub fn group<T: PrAbleTuple>(t: T) -> Pra {
     concat(t).group()
@@ -168,6 +178,7 @@ pub fn group<T: PrAbleTuple>(t: T) -> Pra {
 pub fn concat_map<O, F: Fn(&O) -> Pra>(l: &Vec<O>, f: F) -> Pra {
     Pra::Concat(l.into_iter().map(f).collect_vec())
 }
+
 #[inline]
 pub fn concat_interweave(items: Vec<Pra>, seps: Vec<Pra>, sep: Pra) -> Pra {
     let zipped = items.into_iter().zip_longest(seps.into_iter()).map(|x| match x {
@@ -194,6 +205,7 @@ pub fn zip_map2_sep1<O, S: PrAble, T, F: Fn(&O, Pra) -> T>(l: &SepList1<O, S>, t
         .map(|(item, sep)| f(item, sep))
         .collect_vec()
 }
+
 #[inline]
 pub fn zip_map_sep1<O, S: PrAble, F: Fn(&O) -> Pra>(l: &SepList1<O, S>, term: Pra, f: F) -> Vec<Pra> {
     let items = l.items.iter().map(|v| f(v)).collect_vec();
@@ -204,10 +216,12 @@ pub fn zip_map_sep1<O, S: PrAble, F: Fn(&O) -> Pra>(l: &SepList1<O, S>, term: Pr
         .map(|(item, sep)| concat((item, sep)))
         .collect_vec()
 }
+
 #[inline]
 pub fn zip_map_sep1_as_chunks<O, S: PrAble, F: Fn(&O) -> Pra>(l: &SepList1<O, S>, term: Pra, f: F) -> Vec<PraChunk> {
     zip_map_sep1(l, term, f).into_iter().map(|v| v.chunk()).collect_vec()
 }
+
 #[inline]
 pub fn zip_sep1_as_chunks<O: PrAble, S: PrAble>(l: &SepList1<O, S>, term: Pra) -> Vec<PraChunk> {
     zip_map_sep1_as_chunks(l, term, |o| o.pr())
@@ -224,10 +238,12 @@ pub fn concat_map_sep1<O, S: PrAble, F: Fn(&O) -> Pra>(l: &SepList1<O, S>, sep: 
 pub fn concat_vec<O: PrAble>(l: &Vec<O>, sep: Pra) -> Pra {
     Pra::Concat(itertools::intersperse(l.into_iter().map(|v| v.pr()), sep).collect::<Vec<_>>())
 }
+
 #[inline]
 pub fn concat_chunks(initial_nl: Pra, l: Vec<PraChunk>, rbrace: Option<Pra>, nest_amt: NestAmt) -> Pra {
     Pra::DelimitedChunkConcat(Box::new(initial_nl), l, rbrace.map(Box::new), nest_amt)
 }
+
 #[inline]
 pub fn concat_map_vec<O, F: Fn(&O) -> Pra>(l: &Vec<O>, sep: Pra, f: F) -> Pra {
     Pra::Concat(itertools::intersperse(l.into_iter().map(|v| f(v)), sep).collect::<Vec<_>>())
@@ -247,7 +263,8 @@ struct EvaledPraChunk(Vec<Comment>, EvaledPra); // a thing that is meant to live
 #[derive(Clone, Debug)]
 enum EvaledPra {
     S(PraSpaceKind),
-    Tok(Vec<Comment>, String), // the index of the token
+    Tok(Vec<Comment>, String),
+    // the index of the token
     Concat(Vec<Self>),
     Group(Box<Self>),
     Nest(Box<Self>, NestAmt),
@@ -365,9 +382,9 @@ impl EvaledPra {
     }
 
     fn pretty<'b, D, A: Clone>(&'b self, allocator: &'b D) -> DocBuilder<'b, D, A>
-    where
-        D: DocAllocator<'b, A>,
-        D::Doc: Clone,
+        where
+            D: DocAllocator<'b, A>,
+            D::Doc: Clone,
     {
         match self {
             EvaledPra::S(sk) => match sk {
@@ -383,9 +400,7 @@ impl EvaledPra {
                 let comments = comments.clone().into_iter().fold(Vec::new(), |mut v, x| {
                     if v.len() == 0 {
                         v.push(x);
-                    } else if matches!(&v[v.len() - 1], Comment::NewLine) && matches!(x, Comment::NewLine) {
-                    } else if matches!(&v[v.len() - 1], Comment::LineComment(_)) && matches!(x, Comment::NewLine) {
-                    } else {
+                    } else if matches!(&v[v.len() - 1], Comment::NewLine) && matches!(x, Comment::NewLine) {} else if matches!(&v[v.len() - 1], Comment::LineComment(_)) && matches!(x, Comment::NewLine) {} else {
                         v.push(x)
                     }
                     v
@@ -518,8 +533,6 @@ pub fn as_pretty(
     let allocator = BoxAllocator;
     let mut mem = Vec::new();
 
-    // println!("{:#?}\n\n\n", ast
-    //     .pretty::<_, ()>(&allocator));
     let result = ast
         .pretty::<_, ()>(&allocator)
         .1

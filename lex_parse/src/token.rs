@@ -1,14 +1,15 @@
+use std::str;
+
 use nom::{
     branch::alt,
     bytes::complete::{is_not, tag, take, take_until, take_while, take_while1},
     character::complete::{alpha1, alphanumeric1, char, digit1, hex_digit1, one_of},
     combinator::{all_consuming, map, opt, recognize, rest},
     error::{context, ContextError, ParseError},
+    IResult,
     multi::{many0, many0_count, many1},
     sequence::{delimited, pair, preceded, tuple},
-    IResult,
 };
-use std::str;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TokenKind {
@@ -121,6 +122,7 @@ pub enum TokenKind {
     IllegalChar,
     UntermStr,
 }
+
 const CTRL_CHARS: &str = "()[]{};,?!.+-*/=|&~^%<>:#'@$";
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

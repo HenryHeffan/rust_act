@@ -1,19 +1,24 @@
-use super::{
-    basic::{ast::*, *},
-    langs::{ast::*, *},
-};
-use crate::parser::utils::{MyParserExt, ParserExt2, ET};
 use nom::{
     branch::alt,
     combinator::{eof, opt},
-    sequence::tuple,
-    IResult, Parser,
+    IResult,
+    Parser, sequence::tuple,
 };
 use nom_supreme::parser_ext::ParserExt;
 
+use ast::*;
+
+use crate::utils::{ET, MyParserExt, ParserExt2};
+
+use super::{
+    basic::{*, ast::*},
+    langs::{*, ast::*},
+};
+
 pub mod ast {
+    use crate::utils::SepList1;
+
     use super::*;
-    use crate::parser::utils::SepList1;
 
     #[derive(Debug, Copy, Clone)]
     pub enum ChanDir {
@@ -86,13 +91,16 @@ pub mod ast {
         pub Option<(CtrlLParen, PortConnSpec, CtrlRParen)>,
         pub Option<(CtrlAtSign, BracketedAttrList)>,
     );
+
     #[derive(Debug)]
     pub struct Connection(pub ConnectionId, pub CtrlSemi);
 
     #[derive(Debug)]
     pub struct InstanceId(pub ConnectionId, pub Vec<(CtrlEquals, ArrayedExprs)>);
+
     #[derive(Debug)]
     pub struct Instance(pub InstType, pub SepList1<InstanceId, CtrlComma>, pub CtrlSemi);
+
     #[derive(Debug)]
     pub struct Alias(pub ArrayedExprIds, pub CtrlEquals, pub ArrayedExprs, pub CtrlSemi);
 
@@ -118,6 +126,7 @@ pub mod ast {
         pub SepList1<GuardedClause, Ctrl /*[]*/>,
         pub CtrlRBracket,
     );
+
     #[derive(Debug)]
     pub struct BaseDynamicLoop(
         pub Ctrl, /* `*[` */
@@ -136,6 +145,7 @@ pub mod ast {
         Expr(Expr, Option<(CtrlColon, StrTok)>),
         Conn(ExprId, ConnOp, ExprId, Option<(CtrlColon, StrTok)>),
     }
+
     #[derive(Debug)]
     pub struct Assertion(pub CtrlLBrace, pub AssertionPart, pub CtrlRBrace, pub CtrlSemi);
 
@@ -212,6 +222,7 @@ pub mod ast {
 
     #[derive(Debug)]
     pub struct ParamInstance(pub ParamInstType, pub IdList);
+
     #[derive(Debug)]
     pub struct OptTemplateSpec(
         pub Option<Kw>,
@@ -223,8 +234,10 @@ pub mod ast {
 
     #[derive(Debug)]
     pub struct OverrideOneSpec(pub InstType, pub SepList1<Ident, CtrlComma>, pub CtrlSemi);
+
     #[derive(Debug)]
     pub struct OverrideSpec(pub Ctrl /* +{ */, pub Vec<OverrideOneSpec>, pub CtrlRBrace);
+
     #[derive(Debug)]
     pub struct InterfaceSpecItem(
         pub InstType,
@@ -232,8 +245,10 @@ pub mod ast {
         pub SepList1<IdMap, CtrlComma>,
         pub CtrlRBrace,
     );
+
     #[derive(Debug)]
     pub struct InterfaceSpec(pub SepList1<InterfaceSpecItem, CtrlComma>);
+
     #[derive(Debug)]
     pub struct IdMap(pub Ident, pub CtrlLArrow, pub Ident);
 
@@ -260,6 +275,7 @@ pub mod ast {
         DefFunc,
         DefIFace,
     }
+
     #[derive(Debug)]
     pub struct ProclikeDecl(
         pub (KwProclikeKind, Kw),
@@ -291,11 +307,10 @@ pub mod ast {
         NoBody(CtrlSemi),
         WithBody(CtrlLBrace, SepList1<Ident, CtrlComma>, CtrlRBrace, CtrlSemi),
     }
+
     #[derive(Debug)]
     pub struct IdList(pub SepList1<(Ident, Vec<(CtrlLBracket, Expr, CtrlRBracket)>), CtrlComma>);
 }
-
-use ast::*;
 
 // chan_dir: {excl}
 //          "?"
@@ -310,8 +325,8 @@ fn chan_dir(i: &[u8]) -> IResult<&[u8], ChanDir, ET> {
         ctrl('!').map(ChanDir::WriteOnly),
         ctrl('?').map(ChanDir::ReadOnly),
     ))
-    .context("chan dir")
-    .parse(i)
+        .context("chan dir")
+        .parse(i)
 }
 
 // physical_inst_type: {excl}
@@ -368,9 +383,10 @@ pub fn inst_type(i: &[u8]) -> IResult<&[u8], InstType, ET> {
         non_chan_type.map(InstType::NonChanType),
         param_inst_type.map(InstType::Param),
     ))
-    .context("inst type")
-    .parse(i)
+        .context("inst type")
+        .parse(i)
 }
+
 // user_type: qualified_type [ chan_dir ] [ template_args ]
 // template_args: "<" !endgt { arrayed_exprs_or_type "," }* ">" !noendgt
 // arrayed_exprs_or_type: {excl}
@@ -409,8 +425,8 @@ pub fn param_inst_type(i: &[u8]) -> IResult<&[u8], ParamInstType, ET> {
         kw("pbool").map(ParamInstType::PBool),
         kw("preal").map(ParamInstType::PReal),
     ))
-    .context("param type")
-    .parse(i)
+        .context("param type")
+        .parse(i)
 }
 
 // func_ret_type: {excl}
@@ -501,7 +517,7 @@ pub fn alias_conn_or_inst(i: &[u8]) -> IResult<&[u8], AliasConnOrInst, ET> {
         connection.map(AliasConnOrInst::Connection),
         instance.map(AliasConnOrInst::Instance),
     ))
-    .parse(i)
+        .parse(i)
 }
 
 // conditional: "[" guarded_cmds "]"
@@ -572,8 +588,8 @@ pub fn alias_conn_or_inst(i: &[u8]) -> IResult<&[u8], AliasConnOrInst, ET> {
 //              | "export"
 
 fn guarded_clause<'a, T, OT>(peek_term_1: T, peek_term_2: T) -> impl Parser<&'a [u8], GuardedClause, ET<'a>>
-where
-    T: Parser<&'a [u8], OT, ET<'a>> + Clone + Copy,
+    where
+        T: Parser<&'a [u8], OT, ET<'a>> + Clone + Copy,
 {
     move |i| {
         let macro_branch = ctrl('(')
@@ -675,6 +691,7 @@ fn id_list(i: &[u8]) -> IResult<&[u8], IdList, ET> {
 
     item.list1_sep_by(ctrl(',')).p().map(IdList).parse(i)
 }
+
 fn parened_port_formal_list(i: &[u8]) -> IResult<&[u8], ParenedPortFormalList, ET> {
     let item = inst_type.then(id_list).map(|(a, b)| PortFormalListItem(a, b));
     item.list1_sep_by(ctrl(';'))
@@ -958,6 +975,7 @@ pub fn basic_item_helper<'a>(is_top_parser: bool) -> impl Parser<&'a [u8], TopIt
 pub fn base_item(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
     basic_item_helper(false).context("top level item").parse(i)
 }
+
 pub fn top_item(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
     basic_item_helper(true).context("top level item").parse(i)
 }
