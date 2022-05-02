@@ -468,17 +468,17 @@ mod lang_chp_hse {
                                 let start_offset = ctrl_before.ft_ptr_last();
                                 let end_offset = FTPtr::of_ptr(&ii[0]);
                                 // last_ii holds the input in the final chp statement
-                                let last_ii = &i[i.len() - ii.len() - FTPtr::offset_between(&start_offset, &end_offset)+1..i.len() - ii.len() - 1];
+                                let last_ii = &i[i.len() - ii.len() - FTPtr::offset_between(&start_offset, &end_offset) + 1..i.len() - ii.len() - 1];
 
                                 // then, scan through the list for any potential guard symbols, and try
                                 // parsing around each, starting with the left-most one
                                 let split = (0..last_ii.len() - 1).into_iter().filter(|i|
-                                    ctrl2('<', '-').parse(&last_ii[*i..i+2]).is_ok()
+                                    ctrl2('<', '-').parse(&last_ii[*i..i + 2]).is_ok()
                                 ).find_map(|i| {
                                     let r1 = chp_item.complete().parse(&last_ii[0..i]);
-                                    let r2 = expr.complete().parse(&last_ii[i+2..last_ii.len()]);
+                                    let r2 = expr.complete().parse(&last_ii[i + 2..last_ii.len()]);
                                     if r1.is_ok() && r2.is_ok() {
-                                        let c = ctrl2('<', '-').parse(&last_ii[i..i+2]);
+                                        let c = ctrl2('<', '-').parse(&last_ii[i..i + 2]);
                                         Some((r1.unwrap().1, c.unwrap().1, r2.unwrap().1))
                                     } else {
                                         None
@@ -488,22 +488,21 @@ mod lang_chp_hse {
                                 match split {
                                     None => Ok((ii, ChpBracketedStmt::DoLoop(open_bracket, items, oexpr, close_bracket))),
                                     Some((item, arrow, expr)) => {
-
                                         let mut items = items;
-                                        let ln = items.0.items.len()-1;
+                                        let ln = items.0.items.len() - 1;
                                         let last_comma_list = &mut items.0.items[ln];
-                                        let ln = last_comma_list.items.len()-1;
-                                        last_comma_list.items[ln]= item;
+                                        let ln = last_comma_list.items.len() - 1;
+                                        last_comma_list.items[ln] = item;
 
                                         Ok((ii, ChpBracketedStmt::DoLoop(open_bracket, items, Some((arrow, expr)), close_bracket)))
                                     }
                                 }
                             }
                         }
-                    },
+                    }
                     e => Ok((ii, e))
                 }
-            },
+            }
             e => e
         }
     }

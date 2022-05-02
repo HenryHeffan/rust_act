@@ -27,7 +27,7 @@ pub mod ast {
                 ptr: ft as *const u8 as usize,
             }
         }
-        pub fn offset_between(begin: &FTPtr, end:&FTPtr) -> usize {
+        pub fn offset_between(begin: &FTPtr, end: &FTPtr) -> usize {
             end.ptr - begin.ptr
         }
         pub fn dummy() -> FTPtr {

@@ -7,34 +7,6 @@ use clap::Parser;
 use act_fmt::print_pretty;
 use lex_parse::*;
 
-// Note that the three-slash comments are actually used in the help output
-/// A tool to format Act code.
-#[derive(Parser, Debug)]
-#[clap(author, version, about, long_about = None)]
-struct Cli {
-    // TODO allow multiple paths
-    /// path of the file to update
-    #[clap()]
-    path: PathBuf,
-
-    /// overwrite the file with the formatted code
-    #[clap(short, long)]
-    inplace: bool,
-
-    /// overwrite the file with the formatted code
-    #[clap(short, long)]
-    verbose: bool,
-
-    /// Only parse the file and check for bad syntax constructs
-    #[clap(short, long)]
-    parse_only: bool,
-
-    // TODO move configuration into a separate file?
-    /// maximum line width
-    #[clap(short, long, default_value_t = 80)]
-    width: usize,
-}
-
 fn parse_or_print_errors(src: &str, verbose: bool) -> ParseTree {
     match lex_parse::parse(&src) {
         LexParseResult::LexErrors(errors) => {
@@ -103,25 +75,55 @@ fn parse_or_print_errors(src: &str, verbose: bool) -> ParseTree {
     }
 }
 
+// Note that the three-slash comments are actually used in the help output
+/// A tool to format Act code.
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+struct Cli {
+    // TODO allow multiple paths
+    /// paths of the files to format
+    #[clap()]
+    paths: Vec<PathBuf>,
+
+    /// overwrite the file with the formatted code
+    #[clap(short, long)]
+    inplace: bool,
+
+    /// overwrite the file with the formatted code
+    #[clap(short, long)]
+    verbose: bool,
+
+    /// Only parse the file and check for bad syntax constructs
+    #[clap(short, long)]
+    dry_run: bool,
+
+    // TODO move configuration into a separate file?
+    /// maximum line width
+    #[clap(short, long, default_value_t = 80)]
+    width: usize,
+}
+
 fn main() {
     let args: Cli = Cli::parse();
 
-    let src = fs::read_to_string(&args.path).unwrap_or_else(|_| {
-        println!(
-            "Failed to read file '{}'",
-            args.path.to_str().unwrap_or("<ERROR DECODING PATH>")
-        );
-        std::process::exit(1)
-    });
+    for path in args.paths {
+        let src = fs::read_to_string(&path).unwrap_or_else(|_| {
+            println!(
+                "Failed to read file '{}'",
+                path.to_str().unwrap_or("<ERROR DECODING PATH>")
+            );
+            std::process::exit(1)
+        });
 
-    let parse_result = parse_or_print_errors(&src, args.verbose);
+        let parse_result = parse_or_print_errors(&src, args.verbose);
 
-    if !args.parse_only {
-        let pretty_str = print_pretty(&parse_result, args.width)
-            .unwrap_or("Failed to pretty-print ast".to_string());
-        match args.inplace {
-            true => fs::write(&args.path, pretty_str).expect("Failed to write file"),
-            false => println!("{}", pretty_str),
+        if !args.dry_run {
+            let pretty_str = print_pretty(&parse_result, args.width)
+                .unwrap_or("Failed to pretty-print ast".to_string());
+            match args.inplace {
+                true => fs::write(&path, pretty_str).expect("Failed to write file"),
+                false => println!("{}", pretty_str),
+            }
         }
     }
 }
