@@ -1044,21 +1044,21 @@ impl PrAble for TimingBody {
             Some((colon, tc2)) => concat((colon, opt_qmark, space(), tc2)),
         };
         let e = e.as_ref().map_or(nil(), |(lbrac, e, rbrac)| concat((lbrac, e, rbrac)));
-        concat((tc1, qmark_and_tc2, tt, e, tc3))
+        concat((tc1, qmark_and_tc2, space(), tt, space(), e, tc3))
     }
 }
 
 impl PrChunkAble for SpecItem {
     fn prc(&self) -> PraChunk {
         match self {
-            SpecItem::Normal(id, lparen, eids, rparen) => concat((
+            SpecItem::Normal(id, lparen, eids, rparen) => group((
                 id,
                 lparen,
                 concat((concat_sep1(eids, line()), line_())).group().nest(NestAmt(2)),
                 rparen,
             ))
                 .chunk(),
-            SpecItem::Timing(kw, body) => concat((kw, body)).chunk(),
+            SpecItem::Timing(kw, body) => group((kw, space(), body)).chunk(),
         }
     }
 }
