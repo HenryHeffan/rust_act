@@ -1,7 +1,6 @@
 use std::ops::Range;
 
-use nom::error::{convert_error, VerboseError};
-use nom::Parser;
+use nom::{Finish, Parser};
 use nom_supreme::error::ErrorTree;
 use nom_supreme::ParserExt;
 
@@ -76,20 +75,11 @@ fn error_tree_to_str<'a>(tl: usize, i: i32, e: &'a ErrorTree<&'a [u8]>) -> (usiz
 }
 
 pub fn parse(data: &str) -> LexParseResult {
-    let tokenized = lexer::<VerboseError<&str>>(data);
+    let tokenized = lexer::<error::ErrorIgnorerT<&str>>(data);
 
     let (tokens, final_comments) = match tokenized {
-        // I think we should be able to tokenize any file, so this should never be used. However. Leave this code in just to be safe
-        Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
-            panic!("{}", convert_error(data, e))
-        }
-
-        // we are parsing using "complete", so I dont think we should be able to hit this!
-        Err(nom::Err::Incomplete(_)) => {
-            panic!()
-        }
-
-        // Otherwise, we managed to tokenize the stream (as we should be able to), so check if there are any error tokens
+        // I think we should be able to tokenize any file. Otherwise, we managed to tokenize the
+        // stream (as we should be able to), so check if there are any error tokens
         Ok(tokens) => {
             let (remainder, (tokens, final_whitespace)) = tokens;
             assert_eq!(remainder.len(), 0); // every character should have been parsed
@@ -123,18 +113,19 @@ pub fn parse(data: &str) -> LexParseResult {
                 }
             }
         }
+        _ => { panic!() }
     };
 
     let flat_tokens = flatten_token_list(&tokens);
 
     // first try for a "fast-pass" to parse the file successfully
     let parsed = top_level::<'_, error::ErrorIgnorer<'_>>.complete().parse(&flat_tokens);
-    match parsed {
+    match parsed.finish() {
         // if the parse was successfully, then just return the ast!
         Ok((i, ast)) => {
             assert_eq!(i.len(), 0);
             let ft_start = FTStart::of_vec(&flat_tokens);
-            return LexParseResult::Ok(
+            LexParseResult::Ok(
                 ParseTree {
                     ast,
                     tokens,
@@ -142,105 +133,28 @@ pub fn parse(data: &str) -> LexParseResult {
                     final_comments,
                     ft_start,
                 }
-            );
+            )
         }
-        _ => {}
-    };
+        _ => {
+            // otherwise, reparse while keeping track of the errors
+            match top_level.complete().parse(&flat_tokens) {
+                Err(nom::Err::Incomplete(_)) => panic!("we shouldnt be able to be incomplete"),
+                Ok(_) => panic!("running the parser a second time should only produce an error/failure"),
 
-    let parsed = top_level.complete().parse(&flat_tokens);
-    match parsed {
-        Err(nom::Err::Incomplete(_)) => panic!("we shouldnt be able to be incomplete"),
-        Ok(_) => panic!("running the parser a second time should only produce an error/failure"),
+                // otherwise, extract and return the error
+                Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
+                    let (i, verbose_error) = error_tree_to_str(flat_tokens.len(), 0, &e);
 
-        // otherwise, extract and return the error
-        Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
-            let (i, verbose_error) = error_tree_to_str(flat_tokens.len(), 0, &e);
+                    let bad_token = &tokens[flat_tokens.len() - i];
+                    let c = &bad_token.str_;
+                    let start = c.as_ptr() as usize - data.as_ptr() as usize;
+                    let span = start..start + c.len();
 
-            let bad_token = &tokens[flat_tokens.len() - i];
-            let c = &bad_token.str_;
-            let start = c.as_ptr() as usize - data.as_ptr() as usize;
-            let span = start..start + c.len();
-
-            LexParseResult::ParseErrors(vec![
-                (span, verbose_error)
-            ])
+                    LexParseResult::ParseErrors(vec![
+                        (span, verbose_error)
+                    ])
+                }
+            }
         }
-    }
-}
-
-// Check for the minimum set of errors needed to ensure an unambiguous parse. All other errors should
-// be detected during semantic analysis. At the moment, there are two things that we check for here.
-//
-// First, we check that in a do-loop, the sequence of characters `<-` does not appear in the final
-// expression (since by default `*[ A:=B<-C ]`) parses as `*[ A := B < (-C) ])
-//
-// Then we check that `A = B & C` has parenticies to be either `(A = B) & C` or `A = (B & C)`,
-// since by default this parses as `(A = B) & C`, but sometime people mean the opposite
-//
-// pub fn extract_ambiguous_r_arrows(ast: &Vec<TopItem>) -> () {
-//     enum AllowRArrow { Yes, No }
-//
-//     use ast::*;
-//     fn visit_top_item(item: &TopItem) -> () {
-//         match item {
-//             TopItem::Namespace(NamespaceDecl(_,_,_,_,items,_)) => items.iter().for_each(visit_top_item),
-//             TopItem::Chp(LangChp(_,_,_,items,_)) => items.iter().map(|items|visit_chp_item_list(items, AllowRArrow::Yes)),
-//             TopItem::Hse(LangHse(_,_,_,bodies,_)) => bodies.iter().map(|bodies| match bodies {
-//                 HseBodies::Body(items) => visit_chp_item_list(&items.0, AllowRArrow::Yes),
-//                 HseBodies::Labeled(bodies) => bodies.items.iter().for_each(|LabeledHseBody(_, _, items,_, _)| visit_chp_item_list(&items.0, AllowRArrow::Yes))
-//             }),
-//             _ => {}
-//         }
-//     }
-//     fn visit_chp_item_list(item: &ChpItemList, allow_r_arrow: BracketingKind) -> () {
-//         use ChpStmt::*;
-//         item.0.items.iter().map(|items| items.items.iter().map(
-//             |item| match &item.1 {
-//                 Assign(AssignStmt(_,_,e)) |SendStmt(e) |RecvStmt(e) => {
-//
-//                 }
-//                 AssignBoolDir(_) |Skip(_)  => {}
-//                 DottedCall(_, _, _, _, _, _) |FuncCall(_, _, _, _)| MacroLoop(_) => {}
-//                 ParenedBody(_, items, _) => visit_chp_item_list(items, AllowRArrow::Yes),
-//                 BracketedStmt(stmt) => match stmt {
-//                     ChpBracketedStmt::DetermSelect(_, items, _) |
-//                     ChpBracketedStmt::NonDetermSelect(_,items, _) |
-//                     ChpBracketedStmt::WhileLoop(_, items, _) => {
-//                         items.items.iter().map(| cmd|{
-//                             visit_chp_guarded_cmd(cmd, AllowRArrow::Yes);
-//                         });
-//                     }
-//                     ChpBracketedStmt::DoLoop(_, items, expr, _) => {
-//                         visit_chp_item_list(items, AllowRArrow::No);
-//                         expr.iter().map(|(_, expr)| visit_expr(expr, AllowRArrow::No))
-//                     }
-//                     ChpBracketedStmt::Wait(_, expr, _) => {
-//                         visit_expr(expr, AllowRArrow::No);
-//                     }
-//                 }
-//             }
-//         ));
-//     }
-//     fn visit_chp_guarded_cmd(cmd: &GuardedCmd, allow_r_arrow: AllowRArrow) -> () {
-//             match &cmd {
-//                 GuardedCmd::Expr(_, _, items)  |
-//                 GuardedCmd::Else(_, _, items) |
-//                 GuardedCmd::Macro(_, _, _, _, _, _, _, _, items, _) => {
-//                     visit_chp_item_list(items, allow_r_arrow)
-//                 }
-//             }
-//     }
-//     fn visit_expr(e: &Expr, allow_r_arrow: AllowRArrow) -> () {
-//
-//     }
-//     ast.iter().for_each(|v| visit_top_item(v))
-// }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        let result = 2 + 2;
-        assert_eq!(result, 4);
     }
 }

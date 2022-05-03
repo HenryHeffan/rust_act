@@ -312,7 +312,7 @@ pub fn string<'a, E: ET<'a>>(i: &'a [Tok]) -> IResult<&'a [Tok], StrTok, E> {
 }
 
 // TODO maybe make a struct for this (like CtrlC)
-#[inline]
+#[inline(always)]
 pub fn kw(s: &str) -> KwC {
     macro_rules! make_case {
         ($tok:expr) => {{
@@ -373,7 +373,7 @@ pub fn kw(s: &str) -> KwC {
 }
 
 // TODO manually create these as well. This gives a significant
-#[inline]
+#[inline(always)]
 pub fn ctrl(c: char) -> CtrlC {
     macro_rules! make_case {
         ($c:expr) => {{
@@ -423,7 +423,7 @@ pub fn ctrl(c: char) -> CtrlC {
     }
 }
 
-#[inline]
+#[inline(always)]
 pub fn ctrl2_helper(c1: char, c2: char, ctrl1_not_ctrl2: bool) -> CtrlC {
     macro_rules! make_case {
         ($c1:expr, $c2:expr) => {{
@@ -483,17 +483,17 @@ pub fn ctrl2_helper(c1: char, c2: char, ctrl1_not_ctrl2: bool) -> CtrlC {
     }
 }
 
-#[inline]
+#[inline(always)]
 pub fn ctrl1_not_ctrl2(c1: char, c2: char) -> CtrlC {
     ctrl2_helper(c1, c2, true)
 }
 
-#[inline]
+#[inline(always)]
 pub fn ctrl2(c1: char, c2: char) -> CtrlC {
     ctrl2_helper(c1, c2, false)
 }
 
-#[inline]
+#[inline(always)]
 pub fn ctrl3(c1: char, c2: char, c3: char) -> CtrlC {
     macro_rules! make_case {
         ($c1:expr, $c2:expr, $c3:expr) => {{
@@ -526,7 +526,7 @@ pub fn ctrl3(c1: char, c2: char, c3: char) -> CtrlC {
     }
 }
 
-#[inline]
+#[inline(always)]
 pub fn alt_ctrl11(c1: char, c2: char) -> CtrlC {
     macro_rules! make_case {
         ($c1:expr, $c2:expr) => {{
@@ -596,6 +596,7 @@ impl<'a, F, E: ET<'a>> Parser<&'a [u8], Expr, E> for UnaryExprRecParser<F>
     where
         F: Parser<&'a [u8], Expr, E> + Clone + Copy,
 {
+    #[inline(never)]
     fn parse(&mut self, i: &'a [u8]) -> IResult<&'a [u8], Expr, E>
         where
             F: Parser<&'a [u8], Expr, E> + Clone + Copy,
@@ -730,6 +731,7 @@ impl<'a, F, G, E: ET<'a>> Parser<&'a [u8], Expr, E> for BinaryExprRecParser<F, G
         F: Parser<&'a [u8], Expr, E> + Clone + Copy,
         G: Parser<&'a [u8], (BinaryOp, Ctrl), E> + Clone + Copy,
 {
+    #[inline(never)]
     fn parse(&mut self, i: &'a [u8]) -> IResult<&'a [u8], Expr, E> {
         // In order to make it compile in a reasonable amount of time, we do binary operator parsing in two steps.
         // First we parse a chain of binary operators, and then we parse the precidence within the chains
@@ -789,6 +791,7 @@ impl<'a, F, G, E: ET<'a>> Parser<&'a [u8], Expr, E> for QueryParser<F, G>
         F: Parser<&'a [u8], Expr, E> + Clone + Copy,
         G: Parser<&'a [u8], (BinaryOp, Ctrl), E> + Clone + Copy,
 {
+    #[inline(never)]
     fn parse(&mut self, i: &'a [u8]) -> IResult<&'a [u8], Expr, E> {
         let binary_op = BinaryExprRecParser {
             unary_expr: UnaryExprRecParser { expr: self.expr },

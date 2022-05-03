@@ -228,7 +228,7 @@ pub struct CtrlC {
 }
 
 impl CtrlC {
-    #[inline]
+    #[inline(always)]
     #[must_use = "Parsers do nothing unless used"]
     pub fn p<'a, E: ET<'a>>(self) -> impl Parser<&'a [u8], Ctrl, E>
     {
@@ -237,7 +237,7 @@ impl CtrlC {
 }
 
 impl<'a, E: ET<'a>> Parser<&'a [u8], Ctrl, E> for CtrlC {
-    #[inline]
+    #[inline(always)]
     fn parse(&mut self, input: &'a [u8]) -> IResult<&'a [u8], Ctrl, E> {
         match self.v {
             CtrlN::Char1 => tag(&self.spaced[0..1])
@@ -278,7 +278,7 @@ pub struct KwC {
 }
 
 impl KwC {
-    #[inline]
+    #[inline(always)]
     #[must_use = "Parsers do nothing unless used"]
     pub fn p<'a, E: ET<'a>>(self) -> impl Parser<&'a [u8], Kw, E>
     {
@@ -287,7 +287,7 @@ impl KwC {
 }
 
 impl<'a, E: ET<'a>> Parser<&'a [u8], Kw, E> for KwC {
-    #[inline]
+    #[inline(always)]
     fn parse(&mut self, input: &'a [u8]) -> IResult<&'a [u8], Kw, E> {
         tag(&self.buf[0..1])
             .map(|vs: &[u8]| Kw(FTPtr::of_ptr(&vs[0])))
