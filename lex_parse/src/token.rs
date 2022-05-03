@@ -388,6 +388,7 @@ fn padded_token<'a, E: ParseError<&'a str> + ContextError<&'a str>>(i: &'a str) 
     )(i)
 }
 
+#[inline(never)]
 pub fn lexer<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
 ) -> IResult<&'a str, (Vec<Token<'a>>, Vec<(WhitespaceKind, &'a str)>), E> {
@@ -396,6 +397,7 @@ pub fn lexer<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
 
 pub type FlatToken = u8;
 
+#[inline(never)]
 pub fn flatten_token_list(toks: &Vec<Token>) -> Vec<FlatToken> {
     toks.iter().map(|tok| tok.kind as u8).collect()
 }

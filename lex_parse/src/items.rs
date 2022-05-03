@@ -318,12 +318,12 @@ pub mod ast {
 //         | "?!"
 //         | "!?"
 
-fn chan_dir(i: &[u8]) -> IResult<&[u8], ChanDir, ET> {
+fn chan_dir<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], ChanDir, E> {
     alt((
-        ctrl2('!', '?').map(ChanDir::WriteRead),
-        ctrl2('?', '!').map(ChanDir::ReadWrite),
-        ctrl('!').map(ChanDir::WriteOnly),
-        ctrl('?').map(ChanDir::ReadOnly),
+        ctrl2('!', '?').p().map(ChanDir::WriteRead),
+        ctrl2('?', '!').p().map(ChanDir::ReadWrite),
+        ctrl('!').p().map(ChanDir::WriteOnly),
+        ctrl('?').p().map(ChanDir::ReadOnly),
     ))
         .context("chan dir")
         .parse(i)
@@ -344,7 +344,7 @@ fn chan_dir(i: &[u8]) -> IResult<&[u8], ChanDir, ET> {
 // inst_type: {excl}
 //           physical_inst_type
 //          | param_type
-pub fn inst_type(i: &[u8]) -> IResult<&[u8], InstType, ET> {
+pub fn inst_type<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], InstType, E> {
     let chan_type = kw("chan")
         .then_cut(
             chan_dir
@@ -366,10 +366,10 @@ pub fn inst_type(i: &[u8]) -> IResult<&[u8], InstType, ET> {
     ));
     let template_args = arg.list1_sep_by(ctrl(',')).ang_braced().opt();
     let non_chan_type_name = alt((
-        kw("int").map(NonChanTypeName::Int),
-        kw("ints").map(NonChanTypeName::Ints),
-        kw("bool").map(NonChanTypeName::Bool),
-        kw("enum").map(NonChanTypeName::Enum),
+        kw("int").p().map(NonChanTypeName::Int),
+        kw("ints").p().map(NonChanTypeName::Ints),
+        kw("bool").p().map(NonChanTypeName::Bool),
+        kw("enum").p().map(NonChanTypeName::Enum),
         qualified_name.map(NonChanTypeName::QualifiedName),
     ));
     let non_chan_type = non_chan_type_name
@@ -394,7 +394,7 @@ pub fn inst_type(i: &[u8]) -> IResult<&[u8], InstType, ET> {
 //                   | arrayed_exprs
 // iface_inst_type: user_type
 //
-// pub fn user_type(i: &[u8]) -> IResult<&[u8], UserType, ET> {
+// pub fn user_type<'a, E:ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], UserType, E> {
 //     let arg = ctrl('@')
 //         .ignore_then(user_type)
 //         .map(TemplateArg::UserType)
@@ -416,14 +416,14 @@ pub fn inst_type(i: &[u8]) -> IResult<&[u8], InstType, ET> {
 //           | "pbool"
 //           | "preal"
 //           | "ptype" "(" iface_inst_type ")"
-pub fn param_inst_type(i: &[u8]) -> IResult<&[u8], ParamInstType, ET> {
+pub fn param_inst_type<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], ParamInstType, E> {
     alt((
         kw("ptype")
             .then_cut(inst_type.parened()) // user_type.parened()
             .map(|(a, (b, c, d))| ParamInstType::PType(a, b, Box::new(c), d)),
-        kw("pint").map(ParamInstType::PInt),
-        kw("pbool").map(ParamInstType::PBool),
-        kw("preal").map(ParamInstType::PReal),
+        kw("pint").p().map(ParamInstType::PInt),
+        kw("pbool").p().map(ParamInstType::PBool),
+        kw("preal").p().map(ParamInstType::PReal),
     ))
         .context("param type")
         .parse(i)
@@ -434,7 +434,7 @@ pub fn param_inst_type(i: &[u8]) -> IResult<&[u8], ParamInstType, ET> {
 //              | param_type
 // port_conn_spec: { "." ID "=" arrayed_exprs "," }**
 //               | { opt_arrayed_exprs "," }*
-fn port_conn_spec(i: &[u8]) -> IResult<&[u8], PortConnSpec, ET> {
+fn port_conn_spec<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], PortConnSpec, E> {
     let named = ctrl('.')
         .then(ident)
         .then(ctrl('='))
@@ -451,7 +451,7 @@ fn port_conn_spec(i: &[u8]) -> IResult<&[u8], PortConnSpec, ET> {
 }
 
 // alias: arrayed_expr_ids "=" arrayed_exprs ";"
-fn alias(i: &[u8]) -> IResult<&[u8], Alias, ET> {
+fn alias<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], Alias, E> {
     arrayed_expr_ids
         .then(ctrl('='))
         .then(arrayed_exprs)
@@ -468,7 +468,7 @@ fn alias(i: &[u8]) -> IResult<&[u8], Alias, ET> {
 //            | dense_one_range
 // special_connection_id: ID [ dense_range ] "(" port_conn_spec ")" [ "@" attr_list ]
 //                      | ID [ dense_range ] "@" attr_list
-fn connection_id(i: &[u8]) -> IResult<&[u8], ConnectionId, ET> {
+fn connection_id<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], ConnectionId, E> {
     let opt_port_conn = ctrl('(')
         .then_cut(port_conn_spec.then(ctrl(')')))
         .map(|(a, (b, c))| (a, b, c))
@@ -486,7 +486,7 @@ fn connection_id(i: &[u8]) -> IResult<&[u8], ConnectionId, ET> {
 }
 
 // connection: special_connection_id ";"
-fn connection(i: &[u8]) -> IResult<&[u8], Connection, ET> {
+fn connection<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], Connection, E> {
     connection_id
         .then(ctrl(';'))
         .map(|(a, b)| Connection(a, b))
@@ -501,7 +501,7 @@ fn connection(i: &[u8]) -> IResult<&[u8], Connection, ET> {
 // opt_extra_conn: [ "=" { arrayed_exprs "=" }** ]
 // instance_id: ID [ sparse_range ] [ "(" port_conn_spec ")" ] [ "@" attr_list ] opt_extra_conn
 // instance: inst_type { instance_id "," }* ";"
-fn instance(i: &[u8]) -> IResult<&[u8], Instance, ET> {
+fn instance<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], Instance, E> {
     let extra_conns = ctrl('=').then(arrayed_exprs).many0().term_by_peek_not(ctrl('='));
     let instance_id = connection_id.then(extra_conns).map(|(a, b)| InstanceId(a, b));
     inst_type
@@ -511,7 +511,7 @@ fn instance(i: &[u8]) -> IResult<&[u8], Instance, ET> {
         .parse(i)
 }
 
-pub fn alias_conn_or_inst(i: &[u8]) -> IResult<&[u8], AliasConnOrInst, ET> {
+pub fn alias_conn_or_inst<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], AliasConnOrInst, E> {
     alt((
         alias.map(AliasConnOrInst::Alias),
         connection.map(AliasConnOrInst::Connection),
@@ -587,12 +587,12 @@ pub fn alias_conn_or_inst(i: &[u8]) -> IResult<&[u8], AliasConnOrInst, ET> {
 // template_spec: [ "export" ] "template" "<" { param_inst ";" }* ">"
 //              | "export"
 
-fn guarded_clause<'a, T, OT>(peek_term_1: T, peek_term_2: T) -> impl Parser<&'a [u8], GuardedClause, ET<'a>>
+fn guarded_clause<'a, T, OT, E: ET<'a>>(peek_term_1: T, peek_term_2: T) -> impl Parser<&'a [u8], GuardedClause, E>
     where
-        T: Parser<&'a [u8], OT, ET<'a>> + Clone + Copy,
+        T: Parser<&'a [u8], OT, E> + Clone + Copy,
 {
     move |i| {
-        let macro_branch = ctrl('(')
+        let macro_branch = ctrl('(').p()
             .then(ctrl2('[', ']'))
             .then_cut(tuple((
                 ident,
@@ -686,13 +686,13 @@ fn guarded_clause<'a, T, OT>(peek_term_1: T, peek_term_2: T) -> impl Parser<&'a 
 
     */
 
-fn id_list(i: &[u8]) -> IResult<&[u8], IdList, ET> {
+fn id_list<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], IdList, E> {
     let item = ident.then(expr.bracketed().many0().term_by_peek_not(ctrl('[')));
 
     item.list1_sep_by(ctrl(',')).p().map(IdList).parse(i)
 }
 
-fn parened_port_formal_list(i: &[u8]) -> IResult<&[u8], ParenedPortFormalList, ET> {
+fn parened_port_formal_list<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], ParenedPortFormalList, E> {
     let item = inst_type.then(id_list).map(|(a, b)| PortFormalListItem(a, b));
     item.list1_sep_by(ctrl(';'))
         .opt()
@@ -702,11 +702,11 @@ fn parened_port_formal_list(i: &[u8]) -> IResult<&[u8], ParenedPortFormalList, E
 }
 
 // param_inst: param_type id_list
-fn param_instance(i: &[u8]) -> IResult<&[u8], ParamInstance, ET> {
+fn param_instance<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], ParamInstance, E> {
     param_inst_type.then(id_list).map(|(a, b)| ParamInstance(a, b)).parse(i)
 }
 
-fn method(i: &[u8]) -> IResult<&[u8], Method, ET> {
+fn method<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], Method, E> {
     let method_hse = ident
         .then(ctrl('{'))
         .then_cut(hse_body.then(ctrl('}')))
@@ -722,7 +722,7 @@ fn method(i: &[u8]) -> IResult<&[u8], Method, ET> {
 }
 
 // TODO for Func, add a check in the next pass that (1) there is exactly 1 chp block per function and (2) that it comes last
-fn proclike_body(i: &[u8]) -> IResult<&[u8], ProclikeBody, ET> {
+fn proclike_body<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], ProclikeBody, E> {
     // user_type.then(ident.list1_sep_by(ctrl(',')).p());
     let one_override = inst_type
         .then(ident.list1_sep_by(ctrl(',')).term_by(ctrl(';')))
@@ -747,20 +747,20 @@ fn proclike_body(i: &[u8]) -> IResult<&[u8], ProclikeBody, ET> {
         )
         .map(|(a, (b, (c, d), e))| ProclikeBody::WithBody(a, b, c, d, e));
 
-    let no_body = ctrl(';').map(ProclikeBody::NoBody);
+    let no_body = ctrl(';').p().map(ProclikeBody::NoBody);
 
     no_body.or(with_body).parse(i)
 }
 
 // This is closly coupled to the "top_items" parser below (in particular, where the "cut" is placed)
-fn proclike_decl(i: &[u8]) -> IResult<&[u8], ProclikeDecl, ET> {
+fn proclike_decl<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], ProclikeDecl, E> {
     let def_or_proc = alt((
-        kw("defproc").map(|v| (KwProclikeKind::DefProc, v)),
-        kw("defcell").map(|v| (KwProclikeKind::DefCell, v)),
-        kw("defchan").map(|v| (KwProclikeKind::DefChan, v)),
-        kw("deftype").map(|v| (KwProclikeKind::DefData, v)),
-        kw("function").map(|v| (KwProclikeKind::DefFunc, v)),
-        kw("interface").map(|v| (KwProclikeKind::DefIFace, v)),
+        kw("defproc").p().map(|v| (KwProclikeKind::DefProc, v)),
+        kw("defcell").p().map(|v| (KwProclikeKind::DefCell, v)),
+        kw("defchan").p().map(|v| (KwProclikeKind::DefChan, v)),
+        kw("deftype").p().map(|v| (KwProclikeKind::DefData, v)),
+        kw("function").p().map(|v| (KwProclikeKind::DefFunc, v)),
+        kw("interface").p().map(|v| (KwProclikeKind::DefIFace, v)),
     ));
 
     let id_map = ident
@@ -786,7 +786,7 @@ fn proclike_decl(i: &[u8]) -> IResult<&[u8], ProclikeDecl, ET> {
 }
 
 // lang_refine: "refine" "{" base_item_list "}"
-pub fn lang_refine(i: &[u8]) -> IResult<&[u8], LangRefine, ET> {
+pub fn lang_refine<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], LangRefine, E> {
     kw("refine")
         .then_cut(base_item.many1().braced())
         .map(|(a, (b, c, d))| LangRefine(a, b, c, d))
@@ -794,8 +794,8 @@ pub fn lang_refine(i: &[u8]) -> IResult<&[u8], LangRefine, ET> {
         .parse(i)
 }
 
-fn def_templated(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
-    let opt_templated_spec = kw("export")
+fn def_templated<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], TopItem, E> {
+    let opt_templated_spec = kw("export").p()
         .opt()
         .then_opt(
             kw("template")
@@ -812,8 +812,8 @@ fn def_templated(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
         .parse(i)
 }
 
-fn new_namespace(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
-    kw("export")
+fn new_namespace<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], TopItem, E> {
+    kw("export").p()
         .opt()
         .then(kw("namespace"))
         .then_cut(ident.then(top_item.many0().braced()))
@@ -822,8 +822,8 @@ fn new_namespace(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
         .parse(i)
 }
 
-fn def_enum(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
-    let no_body = ctrl(';').map(EnumBody::NoBody);
+fn def_enum<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], TopItem, E> {
+    let no_body = ctrl(';').p().map(EnumBody::NoBody);
     let with_body = ident
         .list1_sep_by(ctrl(','))
         .braced()
@@ -840,7 +840,7 @@ fn def_enum(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
         .parse(i)
 }
 
-fn import(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
+fn import<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], TopItem, E> {
     // imports_opens: {t-rec}
     //               import_open_item imports_opens
     //              | import_open_item
@@ -868,7 +868,7 @@ fn import(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
         .parse(i)
 }
 
-fn open(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
+fn open<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], TopItem, E> {
     // open_item: "open" qualified_ns "->" ID ";"
     //          | "open" qualified_ns ";"
     kw("open")
@@ -879,7 +879,7 @@ fn open(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
 }
 
 #[inline]
-pub fn basic_item_helper<'a>(is_top_parser: bool) -> impl Parser<&'a [u8], TopItem, ET<'a>> {
+pub fn basic_item_helper<'a, E: ET<'a>>(is_top_parser: bool) -> impl Parser<&'a [u8], TopItem, E> {
     move |i: &'a [u8]| {
         // NOTE: It is important that `[]` and `]` are both invalid starts to base items
         let conditional_gc = guarded_clause(ctrl2('[', ']'), ctrl(']'));
@@ -889,7 +889,7 @@ pub fn basic_item_helper<'a>(is_top_parser: bool) -> impl Parser<&'a [u8], TopIt
 
         let base_macro_loop = ctrl('(')
             .then_cut(tuple((
-                ctrl(';').opt(),
+                ctrl(';').p().opt(),
                 ident,
                 ctrl(':'),
                 expr_range,
@@ -913,8 +913,8 @@ pub fn basic_item_helper<'a>(is_top_parser: bool) -> impl Parser<&'a [u8], TopIt
             .map(|((a, (b, c)), d)| DebugOutput(a, b, c, d));
 
         let conn_op = alt((
-            ctrl3('=', '=', '=').map(ConnOp::Equal),
-            ctrl3('!', '=', '=').map(ConnOp::NotEqual),
+            ctrl3('=', '=', '=').p().map(ConnOp::Equal),
+            ctrl3('!', '=', '=').p().map(ConnOp::NotEqual),
         ));
         let expr_assertion = expr
             .then_opt(ctrl(':').then(string))
@@ -972,15 +972,15 @@ pub fn basic_item_helper<'a>(is_top_parser: bool) -> impl Parser<&'a [u8], TopIt
     }
 }
 
-pub fn base_item(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
+pub fn base_item<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], TopItem, E> {
     basic_item_helper(false).context("top level item").parse(i)
 }
 
-pub fn top_item(i: &[u8]) -> IResult<&[u8], TopItem, ET> {
+pub fn top_item<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], TopItem, E> {
     basic_item_helper(true).context("top level item").parse(i)
 }
 
-pub fn top_level(i: &[u8]) -> nom::IResult<&[u8], Vec<TopItem>, ET> {
+pub fn top_level<'a, E: ET<'a>>(i: &'a [u8]) -> nom::IResult<&'a [u8], Vec<TopItem>, E> {
     top_item
         .many0()
         .terminated_fn(|| eof)

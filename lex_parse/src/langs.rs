@@ -171,20 +171,20 @@ mod lang_chp_hse {
         );
     }
 
-    fn send_type(i: &[u8]) -> IResult<&[u8], (SendType, Ctrl), ET> {
+    fn send_type<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], (SendType, Ctrl), E> {
         alt((
-            ctrl2('!', '+').map(|v| (SendType::Plus, v)),
-            ctrl2('!', '-').map(|v| (SendType::Minus, v)),
-            ctrl('!').map(|v| (SendType::Normal, v)),
+            ctrl2('!', '+').p().map(|v| (SendType::Plus, v)),
+            ctrl2('!', '-').p().map(|v| (SendType::Minus, v)),
+            ctrl('!').p().map(|v| (SendType::Normal, v)),
         ))
             .parse(i)
     }
 
-    fn recv_type(i: &[u8]) -> IResult<&[u8], (RecvType, Ctrl), ET> {
+    fn recv_type<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], (RecvType, Ctrl), E> {
         alt((
-            ctrl2('?', '+').map(|v| (RecvType::Plus, v)),
-            ctrl2('?', '-').map(|v| (RecvType::Minus, v)),
-            ctrl('?').map(|v| (RecvType::Normal, v)),
+            ctrl2('?', '+').p().map(|v| (RecvType::Plus, v)),
+            ctrl2('?', '-').p().map(|v| (RecvType::Minus, v)),
+            ctrl('?').p().map(|v| (RecvType::Normal, v)),
         ))
             .parse(i)
     }
@@ -203,7 +203,7 @@ mod lang_chp_hse {
     //          | "(" chp_body ")"
     //          | ID "(" { chp_log_item "," }* ")"
     //          | base_id "." ID "(" [ { expr "," }** ] ")"
-    pub fn recv_type_cast(i: &[u8]) -> IResult<&[u8], RecvTypeCast, ET> {
+    pub fn recv_type_cast<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], RecvTypeCast, E> {
         alt((
             kw("bool")
                 .then_cut(expr_id.parened())
@@ -216,10 +216,10 @@ mod lang_chp_hse {
             .parse(i)
     }
 
-    pub fn chp_stmt(i: &[u8]) -> IResult<&[u8], ChpStmt, ET> {
+    pub fn chp_stmt<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], ChpStmt, E> {
         // These all begin with a unique token
         // skip -> `skip`   `[` or `*[`
-        let skip_stmt = kw("skip").context("skip_stmt").map(ChpStmt::Skip);
+        let skip_stmt = kw("skip").p().context("skip_stmt").map(ChpStmt::Skip);
         let chp_select_or_loop_stmt = chp_select_or_loop_stmt
             .context("chp_select_or_loop_stmt")
             .map(ChpStmt::BracketedStmt);
@@ -227,8 +227,8 @@ mod lang_chp_hse {
         // The next two both begin with a `(`. If it is followed by a `;` or a `,`, then it is a
         // macro loop. Otherwise, it is a parened body
         let semi_or_comma = alt((
-            ctrl(';').map(|v| (SemiOrComma::Semi, v)),
-            ctrl(',').map(|v| (SemiOrComma::Comma, v)),
+            ctrl(';').p().map(|v| (SemiOrComma::Semi, v)),
+            ctrl(',').p().map(|v| (SemiOrComma::Comma, v)),
         ));
         let macro_loop = ctrl('(')
             .then(semi_or_comma)
@@ -324,7 +324,7 @@ mod lang_chp_hse {
             .parse(i)
     }
 
-    pub fn chp_item(i: &[u8]) -> IResult<&[u8], ChpItem, ET> {
+    pub fn chp_item<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], ChpItem, E> {
         let is_labeled_detector = peek(ident.then(ctrl(':')).then(not(ctrl('='))));
         let label = ident.then(ctrl(':'));
         alt((
@@ -338,7 +338,7 @@ mod lang_chp_hse {
             .parse(i)
     }
 
-    fn chp_item_list1<'a>() -> Unterm<impl Parser<&'a [u8], SepList1<ChpItem, CtrlComma>, ET<'a>>> {
+    fn chp_item_list1<'a, E: ET<'a>>() -> Unterm<impl Parser<&'a [u8], SepList1<ChpItem, CtrlComma>, E>> {
         let chp_comma_list = chp_item.list1_sep_by(ctrl(',')).p();
         chp_comma_list.list1_sep_by(ctrl(';'))
     }
@@ -360,8 +360,8 @@ mod lang_chp_hse {
 
     // TODO come up with a way to make this handle the specific expected terminators
 
-    fn guarded_cmd(i: &[u8]) -> IResult<&[u8], GuardedCmd, ET> {
-        let macro_branch = ctrl('(')
+    fn guarded_cmd<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], GuardedCmd, E> {
+        let macro_branch = ctrl('(').p()
             .then(ctrl2('[', ']'))
             .then_cut(tuple((
                 ident,
@@ -388,7 +388,7 @@ mod lang_chp_hse {
     }
 
     // TODO the is probably a better way of doing this (for the purposes of extracting errors?)
-    fn chp_select_or_loop_stmt(i: &[u8]) -> IResult<&[u8], ChpBracketedStmt, ET> {
+    fn chp_select_or_loop_stmt<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], ChpBracketedStmt, E> {
         #[derive(Copy, Clone)]
         enum Tp {
             DetermSelect,
@@ -397,16 +397,16 @@ mod lang_chp_hse {
         }
         // First try extracting a loop/select statement with guards
         let open = alt((
-            ctrl2('*', '[').map(|v| (Tp::WhileLoop, v)),
-            ctrl2('[', '|').map(|v| (Tp::NonDetermSelect, v)),
-            ctrl('[').map(|v| (Tp::DetermSelect, v)),
+            ctrl2('*', '[').p().map(|v| (Tp::WhileLoop, v)),
+            ctrl2('[', '|').p().map(|v| (Tp::NonDetermSelect, v)),
+            ctrl('[').p().map(|v| (Tp::DetermSelect, v)),
         ));
 
         let loop_ = open
             .then_cut(
                 guarded_cmd
                     .list1_sep_by(ctrl2('[', ']'))
-                    .term_by(ctrl2('|', ']').or(ctrl(']'))),
+                    .term_by(ctrl2('|', ']').p().or(ctrl(']'))),
             )
             .map(|((tp, a), (b, c))| match tp {
                 // TODO handle closing symbol correctly
@@ -473,12 +473,12 @@ mod lang_chp_hse {
                                 // then, scan through the list for any potential guard symbols, and try
                                 // parsing around each, starting with the left-most one
                                 let split = (0..last_ii.len() - 1).into_iter().filter(|i|
-                                    ctrl2('<', '-').parse(&last_ii[*i..i + 2]).is_ok()
+                                    ctrl2('<', '-').p::<crate::error::ErrorIgnorer<'a>>().parse(&last_ii[*i..i + 2]).is_ok()
                                 ).find_map(|i| {
-                                    let r1 = chp_item.complete().parse(&last_ii[0..i]);
-                                    let r2 = expr.complete().parse(&last_ii[i + 2..last_ii.len()]);
+                                    let r1 = chp_item::<'a, crate::error::ErrorIgnorer<'a>>.complete().parse(&last_ii[0..i]);
+                                    let r2 = expr::<'a, crate::error::ErrorIgnorer<'a>>.complete().parse(&last_ii[i + 2..last_ii.len()]);
                                     if r1.is_ok() && r2.is_ok() {
-                                        let c = ctrl2('<', '-').parse(&last_ii[i..i + 2]);
+                                        let c = ctrl2('<', '-').p::<'a, crate::error::ErrorIgnorer<'a>>().parse(&last_ii[i..i + 2]);
                                         Some((r1.unwrap().1, c.unwrap().1, r2.unwrap().1))
                                     } else {
                                         None
@@ -514,7 +514,7 @@ mod lang_chp_hse {
     // hse_body: { hse_comma_item ";" }*
     // hse_comma_item: { hse_body_item "," }*
     // Instead, HSE should be parsed like chp, and then checked afterwords that it is in the correct subset of chp
-    pub fn hse_body(i: &[u8]) -> IResult<&[u8], HseItemList, ET> {
+    pub fn hse_body<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], HseItemList, E> {
         chp_item_list1()
             .p()
             .map(ChpItemList)
@@ -523,7 +523,7 @@ mod lang_chp_hse {
             .parse(i)
     }
 
-    fn hse_bodies(i: &[u8]) -> IResult<&[u8], HseBodies, ET> {
+    fn hse_bodies<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], HseBodies, E> {
         let labeled_body = ident
             .then(ctrl1_not_ctrl2(':', '='))
             .then_cut(hse_body.then(ctrl(':')).then(ident))
@@ -543,10 +543,10 @@ mod lang_chp_hse {
     // lang_chp: "chp" [ supply_spec ] "{" [ chp_body ] "}"
     // lang_hse: "hse" [ supply_spec ] "{" [ hse_bodies ] "}"
     // Instead, HSE should be parsed like chp, and then checked afterwords that it is in the correct subset of chp
-    pub fn lang_hse(i: &[u8]) -> IResult<&[u8], LangHse, ET> {
+    pub fn lang_hse<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], LangHse, E> {
         kw("hse")
             .then_cut(opt_supply_spec.then(ctrl('{')).then(alt((
-                ctrl('}').map(|v| (None, v)),
+                ctrl('}').p().map(|v| (None, v)),
                 hse_bodies.then(ctrl('}')).cut().map(|(a, b)| (Some(a), b)),
             ))))
             .map(|(a, ((b, c), (d, e)))| LangHse(a, b, c, d, e))
@@ -554,7 +554,7 @@ mod lang_chp_hse {
             .parse(i)
     }
 
-    pub fn lang_chp(i: &[u8]) -> IResult<&[u8], LangChp, ET> {
+    pub fn lang_chp<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], LangChp, E> {
         let block = opt_supply_spec.then(chp_item_list1().opt().braced());
         kw("chp")
             .then_cut(block)
@@ -659,11 +659,11 @@ mod lang_prs {
     //       "->"
     //      | "=>"
     //      | "#>"
-    fn arrow_kind(i: &[u8]) -> IResult<&[u8], (ArrowKind, Ctrl), ET> {
+    fn arrow_kind<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], (ArrowKind, Ctrl), E> {
         alt((
-            ctrl2('-', '>').map(|v| (ArrowKind::Minus, v)),
-            ctrl2('=', '>').map(|v| (ArrowKind::Equals, v)),
-            ctrl2('#', '>').map(|v| (ArrowKind::Hash, v)),
+            ctrl2('-', '>').p().map(|v| (ArrowKind::Minus, v)),
+            ctrl2('=', '>').p().map(|v| (ArrowKind::Equals, v)),
+            ctrl2('#', '>').p().map(|v| (ArrowKind::Hash, v)),
         ))
             .parse(i)
     }
@@ -683,7 +683,7 @@ mod lang_prs {
     // tree_subckt_spec: "<" expr ">"
     //                 | "<" STRING ">"
 
-    fn size_spec(i: &[u8]) -> IResult<&[u8], SizeSpec, ET> {
+    fn size_spec<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], SizeSpec, E> {
         ctrl('<')
             .then_cut(
                 expr_no_gt
@@ -695,9 +695,9 @@ mod lang_prs {
             .parse(i)
     }
 
-    fn expr_id_comma_3_tuple(
-        i: &[u8],
-    ) -> IResult<&[u8], (CtrlLParen, ExprId, CtrlComma, ExprId, CtrlComma, ExprId, CtrlRParen), ET> {
+    fn expr_id_comma_3_tuple<'a, E: ET<'a>>(
+        i: &'a [u8],
+    ) -> IResult<&[u8], (CtrlLParen, ExprId, CtrlComma, ExprId, CtrlComma, ExprId, CtrlRParen), E> {
         expr_id
             .then(ctrl(','))
             .then(expr_id)
@@ -708,8 +708,8 @@ mod lang_prs {
             .parse(i)
     }
 
-    fn expr_id_comma_4_tuple(
-        i: &[u8],
+    fn expr_id_comma_4_tuple<'a, E: ET<'a>>(
+        i: &'a [u8],
     ) -> IResult<
         &[u8],
         (
@@ -723,7 +723,7 @@ mod lang_prs {
             ExprId,
             CtrlRParen,
         ),
-        ET,
+        E,
     > {
         expr_id
             .then(ctrl(','))
@@ -737,10 +737,10 @@ mod lang_prs {
             .parse(i)
     }
 
-    fn prs_item(i: &[u8]) -> IResult<&[u8], PrsItem, ET> {
+    fn prs_item<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], PrsItem, E> {
         let pass = alt((
-            kw("passn").map(|v| (PassNPKind::N, v)),
-            kw("passp").map(|v| (PassNPKind::P, v)),
+            kw("passn").p().map(|v| (PassNPKind::N, v)),
+            kw("passp").p().map(|v| (PassNPKind::P, v)),
         ))
             .then_cut(size_spec.opt().then(expr_id_comma_3_tuple))
             .map(|(a, (b, (c, d, e, f, g, h, i)))| PrsItem::Pass(a, b, c, d, e, f, g, h, i));
@@ -803,7 +803,7 @@ mod lang_prs {
     }
 
     #[inline]
-    fn prs_body_row<'a>() -> impl Parser<&'a [u8], PrsBodyRow, ET<'a>> {
+    fn prs_body_row<'a, E: ET<'a>>() -> impl Parser<&'a [u8], PrsBodyRow, E> {
         cut_bracketed_attr_list
             .opt()
             .then(prs_item)
@@ -812,7 +812,7 @@ mod lang_prs {
     }
 
     // lang_prs: "prs" [ supply_spec ] [ "*" ] "{" [ prs_body ] "}"
-    pub fn lang_prs(i: &[u8]) -> IResult<&[u8], LangPrs, ET> {
+    pub fn lang_prs<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], LangPrs, E> {
         kw("prs")
             .then(opt_supply_spec)
             .then_opt(ctrl('*'))
@@ -889,7 +889,7 @@ mod lang_spec {
     //             "<<"
     //            | "<"
     //            | "->"
-    fn timing_clause(i: &[u8]) -> IResult<&[u8], TimingBodyClause, ET> {
+    fn timing_clause<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], TimingBodyClause, E> {
         expr_id
             .then_opt(ctrl('*'))
             .then_opt(dir)
@@ -897,7 +897,7 @@ mod lang_spec {
             .parse(i)
     }
 
-    fn timing_item_body(i: &[u8]) -> IResult<&[u8], TimingBody, ET> {
+    fn timing_item_body<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], TimingBody, E> {
         // "timing" [ expr_id [ dir ] ":" ] [ "?" ] expr_id [ "*" ] [ dir ]
         //            timing_type [ "[" expr "]" ] expr_id [ "*" ] [ dir ]
         // can be expanded to
@@ -909,15 +909,15 @@ mod lang_spec {
         // timing_type [ "[" expr "]" ]
         // expr_id [ "*" ] [ dir ]
         let timing_type = alt((
-            ctrl2('<', '<').map(|v| (TimingType::LtLt, v)),
-            ctrl('<').map(|v| (TimingType::Lt, v)),
-            ctrl2('-', '>').map(|v| (TimingType::Arrow, v)),
+            ctrl2('<', '<').p().map(|v| (TimingType::LtLt, v)),
+            ctrl('<').p().map(|v| (TimingType::Lt, v)),
+            ctrl2('-', '>').p().map(|v| (TimingType::Arrow, v)),
         ));
         let opt_second_cluase = alt((
             ctrl(':')
-                .then_cut(ctrl('?').opt().then(timing_clause))
+                .then_cut(ctrl('?').p().opt().then(timing_clause))
                 .map(|(a, (b, c))| (b, Some((a, c)))),
-            ctrl('?').opt().map(|b| (b, None)),
+            ctrl('?').p().opt().map(|b| (b, None)),
         ));
         timing_clause
             .then(opt_second_cluase)
@@ -928,7 +928,7 @@ mod lang_spec {
             .parse(i)
     }
 
-    fn spec_item(i: &[u8]) -> IResult<&[u8], SpecItem, ET> {
+    fn spec_item<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], SpecItem, E> {
         // TODO is this right?
         let normal_item = ident
             .then(expr_id_or_star.list1_sep_by(ctrl(',')).parened())
@@ -941,7 +941,7 @@ mod lang_spec {
     }
 
     // lang_spec: "spec" "{" spec_body "}"
-    pub fn lang_spec(i: &[u8]) -> IResult<&[u8], LangSpec, ET> {
+    pub fn lang_spec<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], LangSpec, E> {
         let rc = kw("requires").then_cut(spec_item.many0().braced());
         let ec = kw("ensures").then_cut(spec_item.many0().braced());
 
@@ -1045,7 +1045,7 @@ mod lang_dataflow {
     //                        expr_id_or_star
     //                       | "|"
 
-    fn dataflow_item(i: &[u8]) -> IResult<&[u8], DataflowItem, ET> {
+    fn dataflow_item<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], DataflowItem, E> {
         let cluster = kw("dataflow_cluster")
             .then_cut(dataflow_item.list1_sep_by(ctrl(';')).braced())
             .map(|(a, (b, c, d))| DataflowItem::Cluster(a, b, c, d));
@@ -1083,7 +1083,7 @@ mod lang_dataflow {
             .parse(i)
     }
 
-    pub fn lang_dataflow(i: &[u8]) -> IResult<&[u8], LangDataflow, ET> {
+    pub fn lang_dataflow<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], LangDataflow, E> {
         let order_list = expr_id
             .list1_sep_by(ctrl(','))
             .term_by(ctrl('<'))
@@ -1135,7 +1135,7 @@ mod lang_initialize {
 
     // lang_initialize: "Initialize" "{" { action_items ";" }* "}"
     // action_items: ID "{" hse_body "}"
-    pub fn lang_initialize(i: &[u8]) -> IResult<&[u8], LangInitialize, ET> {
+    pub fn lang_initialize<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], LangInitialize, E> {
         let action_item = ident
             .then(hse_body.braced())
             .map(|(a, (b, c, d))| ActionItem(a, b, c, d));
@@ -1194,14 +1194,14 @@ mod lang_sizing {
     // size_body: { size_setup ";" }* { size_directive ";" }*
     // lang_size: "sizing" "{" [ size_body ] "}"
 
-    fn directive_part(i: &[u8]) -> IResult<&[u8], DirectivePart, ET> {
+    fn directive_part<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], DirectivePart, E> {
         dir.then(expr)
             .then_opt(ctrl(',').then_cut(expr.then_opt(ctrl(',').then_cut(expr))))
             .map(|((a, b), c)| DirectivePart(a, b, c))
             .parse(i)
     }
 
-    fn sizing_item(i: &[u8]) -> IResult<&[u8], SizingItem, ET> {
+    fn sizing_item<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], SizingItem, E> {
         let setup_item = ident
             .then(ctrl2('<', '-'))
             .then_cut(expr)
@@ -1228,7 +1228,7 @@ mod lang_sizing {
         alt((setup_item, directive_item, directive_macro_loop)).parse(i)
     }
 
-    pub fn lang_sizing(i: &[u8]) -> IResult<&[u8], LangSizing, ET> {
+    pub fn lang_sizing<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], LangSizing, E> {
         // TODO enforce size_sets are before sizing directives
         // This works because "size_setups" and "size_directives" are mutually exclusive.
         kw("sizing")

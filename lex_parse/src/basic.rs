@@ -291,21 +291,21 @@ pub mod ast {
 }
 
 #[inline]
-pub fn num<'a>(i: &'a [Tok]) -> IResult<&'a [Tok], Num, ET> {
+pub fn num<'a, E: ET<'a>>(i: &'a [Tok]) -> IResult<&'a [Tok], Num, E> {
     tag(&[TokenKind::Num as u8][..])
         .map(|vs: &'a [Tok]| Num(FTPtr::of_ptr(&vs[0])))
         .parse(i)
 }
 
 #[inline]
-pub fn ident<'a>(i: &'a [Tok]) -> IResult<&'a [Tok], Ident, ET> {
+pub fn ident<'a, E: ET<'a>>(i: &'a [Tok]) -> IResult<&'a [Tok], Ident, E> {
     tag(&[TokenKind::Ident as u8][..])
         .map(|vs: &'a [Tok]| Ident(FTPtr::of_ptr(&vs[0])))
         .parse(i)
 }
 
 #[inline]
-pub fn string<'a>(i: &'a [Tok]) -> IResult<&'a [Tok], StrTok, ET> {
+pub fn string<'a, E: ET<'a>>(i: &'a [Tok]) -> IResult<&'a [Tok], StrTok, E> {
     tag(&[TokenKind::Str as u8][..])
         .map(|vs: &'a [Tok]| StrTok(FTPtr::of_ptr(&vs[0])))
         .parse(i)
@@ -556,9 +556,8 @@ pub fn alt_ctrl11(c1: char, c2: char) -> CtrlC {
     }
 }
 
-pub fn qualified_name(i: &[u8]) -> IResult<&[u8], QualifiedName, ET> {
-    let leading_colons = ctrl2(':', ':').opt();
-    leading_colons
+pub fn qualified_name<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], QualifiedName, E> {
+    ctrl2(':', ':').p().opt()
         .then(ident.list1_sep_by(ctrl2(':', ':')).p())
         .map(|(a, b)| QualifiedName(a, b))
         .context("qualified name")
@@ -566,7 +565,7 @@ pub fn qualified_name(i: &[u8]) -> IResult<&[u8], QualifiedName, ET> {
 }
 
 // attr_list: "[" { ID "=" expr ";" }** "]"
-pub fn cut_bracketed_attr_list(i: &[u8]) -> IResult<&[u8], BracketedAttrList, ET> {
+pub fn cut_bracketed_attr_list<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], BracketedAttrList, E> {
     let one_attr = ident.then(ctrl('=')).then(expr).map(|((a, b), c)| (a, b, c));
     ctrl('[')
         .then_cut(one_attr.list1_sep_by(ctrl(';')).term_by(ctrl(']')))
@@ -574,8 +573,8 @@ pub fn cut_bracketed_attr_list(i: &[u8]) -> IResult<&[u8], BracketedAttrList, ET
         .parse(i)
 }
 
-pub fn dir(i: &[u8]) -> IResult<&[u8], (Dir, Ctrl), ET> {
-    alt((ctrl('+').map(|v| (Dir::Plus, v)), ctrl('-').map(|v| (Dir::Minus, v)))).parse(i)
+pub fn dir<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], (Dir, Ctrl), E> {
+    alt((ctrl('+').p().map(|v| (Dir::Plus, v)), ctrl('-').p().map(|v| (Dir::Minus, v)))).parse(i)
 }
 
 #[derive(Clone, Copy)]
@@ -584,22 +583,22 @@ struct UnaryExprRecParser<F: Clone + Copy> {
 }
 
 #[inline]
-fn expr_func_name(i: &[u8]) -> IResult<&[u8], FuncName, ET> {
+fn expr_func_name<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], FuncName, E> {
     alt((
-        kw("int").map(FuncName::Int),
-        kw("bool").map(FuncName::Bool),
+        kw("int").p().map(FuncName::Int),
+        kw("bool").p().map(FuncName::Bool),
         uncut(qualified_name.map(FuncName::QualifiedName)),
     ))
         .parse(i)
 }
 
-impl<'a, F> Parser<&'a [u8], Expr, ET<'a>> for UnaryExprRecParser<F>
+impl<'a, F, E: ET<'a>> Parser<&'a [u8], Expr, E> for UnaryExprRecParser<F>
     where
-        F: Parser<&'a [u8], Expr, ET<'a>> + Clone + Copy,
+        F: Parser<&'a [u8], Expr, E> + Clone + Copy,
 {
-    fn parse(&mut self, i: &'a [u8]) -> IResult<&'a [u8], Expr, ET<'a>>
+    fn parse(&mut self, i: &'a [u8]) -> IResult<&'a [u8], Expr, E>
         where
-            F: Parser<&'a [u8], Expr, ET<'a>> + Clone + Copy,
+            F: Parser<&'a [u8], Expr, E> + Clone + Copy,
     {
         // 'Atoms' are expressions that contain no ambiguity
         let concat = ctrl('{')
@@ -629,11 +628,11 @@ impl<'a, F> Parser<&'a [u8], Expr, ET<'a>> for UnaryExprRecParser<F>
             );
 
         let macro_loop_op = alt((
-            ctrl('*').map(|v| (BinaryOp::Mul, v)),
-            ctrl('+').map(|v| (BinaryOp::Plus, v)),
-            ctrl('&').map(|v| (BinaryOp::And, v)),
-            ctrl('^').map(|v| (BinaryOp::Xor, v)),
-            ctrl('|').map(|v| (BinaryOp::Or, v)),
+            ctrl('*').p().map(|v| (BinaryOp::Mul, v)),
+            ctrl('+').p().map(|v| (BinaryOp::Plus, v)),
+            ctrl('&').p().map(|v| (BinaryOp::And, v)),
+            ctrl('^').p().map(|v| (BinaryOp::Xor, v)),
+            ctrl('|').p().map(|v| (BinaryOp::Or, v)),
         ));
 
         let macro_loop = ctrl('(')
@@ -707,9 +706,9 @@ impl<'a, F> Parser<&'a [u8], Expr, ET<'a>> for UnaryExprRecParser<F>
 
         // Unary operators have precidence 2
         let op = alt((
-            ctrl('-').map(|v| (UnaryOp::UMinus, v)),
-            ctrl('~').map(|v| (UnaryOp::Tilde, v)),
-            ctrl('#').map(|v| (UnaryOp::Hash, v)),
+            ctrl('-').p().map(|v| (UnaryOp::UMinus, v)),
+            ctrl('~').p().map(|v| (UnaryOp::Tilde, v)),
+            ctrl('#').p().map(|v| (UnaryOp::Hash, v)),
         ));
 
         // This is an ok use of the nom version of "many0", because all of the things being parsed are 1 token long
@@ -726,12 +725,12 @@ struct BinaryExprRecParser<F: Clone + Copy, G: Clone + Copy> {
     infix_binary_ops: G,
 }
 
-impl<'a, F, G> Parser<&'a [u8], Expr, ET<'a>> for BinaryExprRecParser<F, G>
+impl<'a, F, G, E: ET<'a>> Parser<&'a [u8], Expr, E> for BinaryExprRecParser<F, G>
     where
-        F: Parser<&'a [u8], Expr, ET<'a>> + Clone + Copy,
-        G: Parser<&'a [u8], (BinaryOp, Ctrl), ET<'a>> + Clone + Copy,
+        F: Parser<&'a [u8], Expr, E> + Clone + Copy,
+        G: Parser<&'a [u8], (BinaryOp, Ctrl), E> + Clone + Copy,
 {
-    fn parse(&mut self, i: &'a [u8]) -> IResult<&'a [u8], Expr, ET<'a>> {
+    fn parse(&mut self, i: &'a [u8]) -> IResult<&'a [u8], Expr, E> {
         // In order to make it compile in a reasonable amount of time, we do binary operator parsing in two steps.
         // First we parse a chain of binary operators, and then we parse the precidence within the chains
         (self.unary_expr)
@@ -785,12 +784,12 @@ struct QueryParser<F: Clone + Copy, G: Clone + Copy> {
     infix_binary_ops: G,
 }
 
-impl<'a, F, G> Parser<&'a [u8], Expr, ET<'a>> for QueryParser<F, G>
+impl<'a, F, G, E: ET<'a>> Parser<&'a [u8], Expr, E> for QueryParser<F, G>
     where
-        F: Parser<&'a [u8], Expr, ET<'a>> + Clone + Copy,
-        G: Parser<&'a [u8], (BinaryOp, Ctrl), ET<'a>> + Clone + Copy,
+        F: Parser<&'a [u8], Expr, E> + Clone + Copy,
+        G: Parser<&'a [u8], (BinaryOp, Ctrl), E> + Clone + Copy,
 {
-    fn parse(&mut self, i: &'a [u8]) -> IResult<&'a [u8], Expr, ET<'a>> {
+    fn parse(&mut self, i: &'a [u8]) -> IResult<&'a [u8], Expr, E> {
         let binary_op = BinaryExprRecParser {
             unary_expr: UnaryExprRecParser { expr: self.expr },
             infix_binary_ops: self.infix_binary_ops,
@@ -823,57 +822,59 @@ impl<'a, F, G> Parser<&'a [u8], Expr, ET<'a>> for QueryParser<F, G>
     }
 }
 
-fn infix_binary_ops(i: &[u8]) -> IResult<&[u8], (BinaryOp, Ctrl), ET> {
+fn infix_binary_ops<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], (BinaryOp, Ctrl), E> {
     alt((
-        ctrl('*').map(|v| (BinaryOp::Mul, v)),
-        ctrl('/').map(|v| (BinaryOp::Div, v)),
-        ctrl('%').map(|v| (BinaryOp::Div, v)),
-        ctrl('+').map(|v| (BinaryOp::Plus, v)),
+        ctrl('*').p().map(|v| (BinaryOp::Mul, v)),
+        ctrl('/').p().map(|v| (BinaryOp::Div, v)),
+        ctrl('%').p().map(|v| (BinaryOp::Div, v)),
+        ctrl('+').p().map(|v| (BinaryOp::Plus, v)),
         // This would be invalid syntax anyway, and this stops us from parsing a-> b as a misformatted expression
-        ctrl1_not_ctrl2('-', '>').map(|v| (BinaryOp::Minus, v)),
-        ctrl3('>', '>', '>').map(|v| (BinaryOp::ARShift, v)),
-        ctrl2('>', '>').map(|v| (BinaryOp::RShift, v)),
-        ctrl2('<', '<').map(|v| (BinaryOp::LShift, v)),
-        ctrl2('>', '=').map(|v| (BinaryOp::Geq, v)),
-        ctrl2('<', '=').map(|v| (BinaryOp::Leq, v)),
-        ctrl('>').map(|v| (BinaryOp::Gt, v)),
-        ctrl('<').map(|v| (BinaryOp::Lt, v)),
-        ctrl('=').map(|v| (BinaryOp::Eq, v)),
-        ctrl2('!', '=').map(|v| (BinaryOp::NotEq, v)),
-        ctrl('&').map(|v| (BinaryOp::And, v)),
-        ctrl('^').map(|v| (BinaryOp::Xor, v)),
-        ctrl1_not_ctrl2('|', ']').map(|v| (BinaryOp::Or, v)),
+        ctrl1_not_ctrl2('-', '>').p().map(|v| (BinaryOp::Minus, v)),
+        ctrl3('>', '>', '>').p().map(|v| (BinaryOp::ARShift, v)),
+        ctrl2('>', '>').p().map(|v| (BinaryOp::RShift, v)),
+        ctrl2('<', '<').p().map(|v| (BinaryOp::LShift, v)),
+        ctrl2('>', '=').p().map(|v| (BinaryOp::Geq, v)),
+        ctrl2('<', '=').p().map(|v| (BinaryOp::Leq, v)),
+        ctrl('>').p().map(|v| (BinaryOp::Gt, v)),
+        ctrl('<').p().map(|v| (BinaryOp::Lt, v)),
+        ctrl('=').p().map(|v| (BinaryOp::Eq, v)),
+        ctrl2('!', '=').p().map(|v| (BinaryOp::NotEq, v)),
+        ctrl('&').p().map(|v| (BinaryOp::And, v)),
+        ctrl('^').p().map(|v| (BinaryOp::Xor, v)),
+        ctrl1_not_ctrl2('|', ']').p().map(|v| (BinaryOp::Or, v)),
     ))(i)
 }
 
-fn infix_binary_ops_no_gt(i: &[u8]) -> IResult<&[u8], (BinaryOp, Ctrl), ET> {
+fn infix_binary_ops_no_gt<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], (BinaryOp, Ctrl), E> {
     alt((
-        ctrl('*').map(|v| (BinaryOp::Mul, v)),
-        ctrl('/').map(|v| (BinaryOp::Div, v)),
-        ctrl('%').map(|v| (BinaryOp::Div, v)),
-        ctrl('+').map(|v| (BinaryOp::Plus, v)),
+        ctrl('*').p().map(|v| (BinaryOp::Mul, v)),
+        ctrl('/').p().map(|v| (BinaryOp::Div, v)),
+        ctrl('%').p().map(|v| (BinaryOp::Div, v)),
+        ctrl('+').p().map(|v| (BinaryOp::Plus, v)),
         // This would be invalid syntax anyway, and this stops us from parsing a-> b as a misformatted expression
-        ctrl1_not_ctrl2('-', '>').map(|v| (BinaryOp::Minus, v)),
+        ctrl1_not_ctrl2('-', '>').p().map(|v| (BinaryOp::Minus, v)),
         // ctrl3('>', '>', '>').map(|v| (BinaryOp::ARShift, v)),
         // ctrl2('>', '>').map(|v| (BinaryOp::RShift, v)),
-        ctrl2('<', '<').map(|v| (BinaryOp::LShift, v)),
-        ctrl2('>', '=').map(|v| (BinaryOp::Geq, v)),
-        ctrl2('<', '=').map(|v| (BinaryOp::Leq, v)),
+        ctrl2('<', '<').p().map(|v| (BinaryOp::LShift, v)),
+        ctrl2('>', '=').p().map(|v| (BinaryOp::Geq, v)),
+        ctrl2('<', '=').p().map(|v| (BinaryOp::Leq, v)),
         // ctrl('>').map(|v| (BinaryOp::Gt, v)),
-        ctrl('<').map(|v| (BinaryOp::Lt, v)),
-        ctrl('=').map(|v| (BinaryOp::Eq, v)),
-        ctrl2('!', '=').map(|v| (BinaryOp::NotEq, v)),
-        ctrl('&').map(|v| (BinaryOp::And, v)),
-        ctrl('^').map(|v| (BinaryOp::Xor, v)),
-        ctrl1_not_ctrl2('|', ']').map(|v| (BinaryOp::Or, v)),
+        ctrl('<').p().map(|v| (BinaryOp::Lt, v)),
+        ctrl('=').p().map(|v| (BinaryOp::Eq, v)),
+        ctrl2('!', '=').p().map(|v| (BinaryOp::NotEq, v)),
+        ctrl('&').p().map(|v| (BinaryOp::And, v)),
+        ctrl('^').p().map(|v| (BinaryOp::Xor, v)),
+        ctrl1_not_ctrl2('|', ']').p().map(|v| (BinaryOp::Or, v)),
     ))(i)
 }
 
-pub fn expr(i: &[u8]) -> IResult<&[u8], Expr, ET> {
+#[inline(never)]
+pub fn expr<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], Expr, E> {
     QueryParser { expr, infix_binary_ops }.context("expr").parse(i)
 }
 
-pub fn expr_no_qmark(i: &[u8]) -> IResult<&[u8], Expr, ET> {
+#[inline(never)]
+pub fn expr_no_qmark<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], Expr, E> {
     BinaryExprRecParser {
         unary_expr: UnaryExprRecParser { expr },
         infix_binary_ops,
@@ -882,7 +883,8 @@ pub fn expr_no_qmark(i: &[u8]) -> IResult<&[u8], Expr, ET> {
         .parse(i)
 }
 
-pub fn expr_no_gt(i: &[u8]) -> IResult<&[u8], Expr, ET> {
+#[inline(never)]
+pub fn expr_no_gt<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], Expr, E> {
     QueryParser {
         expr,
         infix_binary_ops: infix_binary_ops_no_gt,
@@ -891,19 +893,19 @@ pub fn expr_no_gt(i: &[u8]) -> IResult<&[u8], Expr, ET> {
         .parse(i)
 }
 
-pub fn expr_range(i: &[u8]) -> IResult<&[u8], ExprRange, ET> {
+pub fn expr_range<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], ExprRange, E> {
     let dotted_part = peek(ctrl('.')).ignore_then_cut(ctrl2('.', '.').then(expr));
     expr.then(dotted_part.opt()).context("expr range").parse(i)
 }
 
-pub fn expr_or_str(i: &[u8]) -> IResult<&[u8], ExprOrStr, ET> {
+pub fn expr_or_str<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], ExprOrStr, E> {
     expr.map(ExprOrStr::Expr).or(string.map(ExprOrStr::Str)).parse(i)
 }
 
-fn prs_unary_rec(i: &[u8]) -> IResult<&[u8], PrsExpr, ET> {
+fn prs_unary_rec<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], PrsExpr, E> {
     let and_or_or = alt((
-        ctrl('&').map(|v| (AndOrOr::And, v)),
-        ctrl('|').map(|v| (AndOrOr::Or, v)),
+        ctrl('&').p().map(|v| (AndOrOr::And, v)),
+        ctrl('|').p().map(|v| (AndOrOr::Or, v)),
     ));
 
     // 'Atoms' are expressions that contain no ambiguity
@@ -944,11 +946,11 @@ fn prs_unary_rec(i: &[u8]) -> IResult<&[u8], PrsExpr, ET> {
         .parse(i)
 }
 
-pub fn prs_expr(i: &[u8]) -> IResult<&[u8], PrsExpr, ET> {
+pub fn prs_expr<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], PrsExpr, E> {
     // In order to make it compile in a reasonable amount of time, we do binary operator parsing in two steps.
     // First we parse a chain of binary operators, and then we parse the precidence within the chains
 
-    let op = alt((ctrl('&').map(|v| (true, v)), ctrl('|').map(|v| (true, v))));
+    let op = alt((ctrl('&').p().map(|v| (true, v)), ctrl('|').p().map(|v| (true, v))));
     prs_unary_rec
         .then(
             op.then(prs_unary_rec)
@@ -989,10 +991,10 @@ pub fn prs_expr(i: &[u8]) -> IResult<&[u8], PrsExpr, ET> {
 //                "{" { arrayed_expr_ids "," }* "}"
 //               | expr_id
 #[inline]
-pub fn arrayed<'a, T, F, G>(array: F, base: G) -> impl Parser<&'a [u8], Arrayed<T>, ET<'a>>
+pub fn arrayed<'a, T, F, G, E: ET<'a>>(array: F, base: G) -> impl Parser<&'a [u8], Arrayed<T>, E>
     where
-        F: Fn(&'a [u8]) -> IResult<&'a [u8], Arrayed<T>, ET<'a>>,
-        G: Fn(&'a [u8]) -> IResult<&'a [u8], T, ET<'a>>,
+        F: Fn(&'a [u8]) -> IResult<&'a [u8], Arrayed<T>, E>,
+        G: Fn(&'a [u8]) -> IResult<&'a [u8], T, E>,
 {
     move |i| {
         let term = alt((
@@ -1006,17 +1008,17 @@ pub fn arrayed<'a, T, F, G>(array: F, base: G) -> impl Parser<&'a [u8], Arrayed<
     }
 }
 
-pub fn arrayed_exprs_no_gt(i: &[u8]) -> IResult<&[u8], Arrayed<Expr>, ET> {
+pub fn arrayed_exprs_no_gt<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], Arrayed<Expr>, E> {
     arrayed(arrayed_exprs, expr_no_gt)
         .context("arrayed exprs no gt")
         .parse(i)
 }
 
-pub fn arrayed_exprs(i: &[u8]) -> IResult<&[u8], Arrayed<Expr>, ET> {
+pub fn arrayed_exprs<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], Arrayed<Expr>, E> {
     arrayed(arrayed_exprs, expr).context("arrayed exprs").parse(i)
 }
 
-pub fn arrayed_expr_ids(i: &[u8]) -> IResult<&[u8], Arrayed<ExprId>, ET> {
+pub fn arrayed_expr_ids<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], Arrayed<ExprId>, E> {
     arrayed(arrayed_expr_ids, expr_id).context("arrayed expr ids").parse(i)
 }
 
@@ -1026,7 +1028,7 @@ pub fn arrayed_expr_ids(i: &[u8]) -> IResult<&[u8], Arrayed<ExprId>, ET> {
 // base_id: ID [ xsparse_range ]
 // expr_id: { base_id "." }*
 
-pub fn base_id(i: &[u8]) -> IResult<&[u8], BaseId, ET> {
+pub fn base_id<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], BaseId, E> {
     let bracketed_spare_ranges = expr_range
         .bracketed()
         .many0()
@@ -1039,7 +1041,7 @@ pub fn base_id(i: &[u8]) -> IResult<&[u8], BaseId, ET> {
         .parse(i)
 }
 
-pub fn expr_id(i: &[u8]) -> IResult<&[u8], ExprId, ET> {
+pub fn expr_id<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], ExprId, E> {
     base_id
         .list1_sep_by(ctrl1_not_ctrl2('.', '.'))
         .p()
@@ -1048,25 +1050,25 @@ pub fn expr_id(i: &[u8]) -> IResult<&[u8], ExprId, ET> {
         .parse(i)
 }
 
-pub fn expr_id_or_star(i: &[u8]) -> IResult<&[u8], ExprIdOrStar, ET> {
+pub fn expr_id_or_star<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], ExprIdOrStar, E> {
     alt((
-        ctrl('*').map(ExprIdOrStar::Star),
+        ctrl('*').p().map(ExprIdOrStar::Star),
         expr_id.cut().map(ExprIdOrStar::ExprId),
     ))
         .parse(i)
 }
 
-pub fn expr_id_or_star_or_bar(i: &[u8]) -> IResult<&[u8], ExprIdOrStarOrBar, ET> {
+pub fn expr_id_or_star_or_bar<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], ExprIdOrStarOrBar, E> {
     alt((
         expr_id.map(ExprIdOrStarOrBar::ExprId),
-        ctrl('*').map(ExprIdOrStarOrBar::Star),
-        ctrl('|').map(ExprIdOrStarOrBar::Bar),
+        ctrl('*').p().map(ExprIdOrStarOrBar::Star),
+        ctrl('|').p().map(ExprIdOrStarOrBar::Bar),
     ))
         .parse(i)
 }
 
 // supply_spec: "<" expr_id [ "," expr_id ] [ "|" expr_id "," expr_id ] ">"
-pub fn opt_supply_spec(i: &[u8]) -> IResult<&[u8], Option<SupplySpec>, ET> {
+pub fn opt_supply_spec<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&[u8], Option<SupplySpec>, E> {
     let supply_spec = ctrl('<')
         .then_cut(
             expr_id

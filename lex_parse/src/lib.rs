@@ -1,14 +1,16 @@
 use std::ops::Range;
 
-use nom::combinator::all_consuming;
 use nom::error::{convert_error, VerboseError};
+use nom::Parser;
 use nom_supreme::error::ErrorTree;
+use nom_supreme::ParserExt;
 
 use ast::{FTStart, TopItem};
 use items::top_level;
 use token::{flatten_token_list, lexer};
 pub use token::{FlatToken, Token, TokenKind, WhitespaceKind};
 
+mod error;
 mod token;
 mod basic;
 mod items;
@@ -124,17 +126,31 @@ pub fn parse(data: &str) -> LexParseResult {
     };
 
     let flat_tokens = flatten_token_list(&tokens);
-    let parsed = all_consuming(top_level)(&flat_tokens);
 
-    let ast = match parsed {
+    // first try for a "fast-pass" to parse the file successfully
+    let parsed = top_level::<'_, error::ErrorIgnorer<'_>>.complete().parse(&flat_tokens);
+    match parsed {
         // if the parse was successfully, then just return the ast!
         Ok((i, ast)) => {
             assert_eq!(i.len(), 0);
-            ast
+            let ft_start = FTStart::of_vec(&flat_tokens);
+            return LexParseResult::Ok(
+                ParseTree {
+                    ast,
+                    tokens,
+                    flat_tokens,
+                    final_comments,
+                    ft_start,
+                }
+            );
         }
+        _ => {}
+    };
 
-        // we should never get an incomplete parse, because we are using "all-consuming"
-        Err(nom::Err::Incomplete(_)) => panic!("{:?}", parsed),
+    let parsed = top_level.complete().parse(&flat_tokens);
+    match parsed {
+        Err(nom::Err::Incomplete(_)) => panic!("we shouldnt be able to be incomplete"),
+        Ok(_) => panic!("running the parser a second time should only produce an error/failure"),
 
         // otherwise, extract and return the error
         Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
@@ -145,21 +161,11 @@ pub fn parse(data: &str) -> LexParseResult {
             let start = c.as_ptr() as usize - data.as_ptr() as usize;
             let span = start..start + c.len();
 
-            return LexParseResult::ParseErrors(vec![
+            LexParseResult::ParseErrors(vec![
                 (span, verbose_error)
-            ]);
+            ])
         }
-    };
-    let ft_start = FTStart::of_vec(&flat_tokens);
-    LexParseResult::Ok(
-        ParseTree {
-            ast,
-            tokens,
-            flat_tokens,
-            final_comments,
-            ft_start,
-        }
-    )
+    }
 }
 
 // Check for the minimum set of errors needed to ensure an unambiguous parse. All other errors should

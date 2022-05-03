@@ -11,13 +11,12 @@ use nom::{
     combinator::{cut, not, peek, recognize},
     error::{ContextError, ParseError}, InputLength, IResult, Offset, Parser, Slice,
 };
-use nom_supreme::{error::ErrorTree, parser_ext::*};
+use nom_supreme::{parser_ext::*};
 
 use crate::ast::{FTPtr, Kw};
+pub use crate::error::ET;
 
 use super::basic::{ast::Ctrl, ctrl};
-
-pub type ET<'a> = ErrorTree<&'a [u8]>;
 
 #[derive(Debug, Clone)]
 pub struct SepList1<T, U> {
@@ -228,9 +227,18 @@ pub struct CtrlC {
     pub label: &'static str,
 }
 
-impl<'a> Parser<&'a [u8], Ctrl, ET<'a>> for CtrlC {
+impl CtrlC {
     #[inline]
-    fn parse(&mut self, input: &'a [u8]) -> IResult<&'a [u8], Ctrl, ET<'a>> {
+    #[must_use = "Parsers do nothing unless used"]
+    pub fn p<'a, E: ET<'a>>(self) -> impl Parser<&'a [u8], Ctrl, E>
+    {
+        self
+    }
+}
+
+impl<'a, E: ET<'a>> Parser<&'a [u8], Ctrl, E> for CtrlC {
+    #[inline]
+    fn parse(&mut self, input: &'a [u8]) -> IResult<&'a [u8], Ctrl, E> {
         match self.v {
             CtrlN::Char1 => tag(&self.spaced[0..1])
                 .or(tag(&self.unspaced[0..1]))
@@ -269,9 +277,18 @@ pub struct KwC {
     pub label: &'static str,
 }
 
-impl<'a> Parser<&'a [u8], Kw, ET<'a>> for KwC {
+impl KwC {
     #[inline]
-    fn parse(&mut self, input: &'a [u8]) -> IResult<&'a [u8], Kw, ET<'a>> {
+    #[must_use = "Parsers do nothing unless used"]
+    pub fn p<'a, E: ET<'a>>(self) -> impl Parser<&'a [u8], Kw, E>
+    {
+        self
+    }
+}
+
+impl<'a, E: ET<'a>> Parser<&'a [u8], Kw, E> for KwC {
+    #[inline]
+    fn parse(&mut self, input: &'a [u8]) -> IResult<&'a [u8], Kw, E> {
         tag(&self.buf[0..1])
             .map(|vs: &[u8]| Kw(FTPtr::of_ptr(&vs[0])))
             .context(self.label)
@@ -392,7 +409,7 @@ pub trait ParserExt2<I, O, E>: ParserExt<I, O, E> + Sized {
 
 impl<I, O, E, P> ParserExt2<I, O, E> for P where P: Parser<I, O, E> {}
 
-pub trait MyParserExt<'a, O>: Parser<&'a [u8], O, ET<'a>> + Sized {
+pub trait MyParserExt<'a, O, E: ET<'a>>: Parser<&'a [u8], O, E> + Sized {
     #[inline]
     #[must_use = "Parsers do nothing unless used"]
     fn list1_sep_by(self, sep: CtrlC) -> Unterm<Self> {
@@ -426,7 +443,7 @@ pub trait MyParserExt<'a, O>: Parser<&'a [u8], O, ET<'a>> + Sized {
     }
 }
 
-impl<'a, O, P: Parser<&'a [u8], O, ET<'a>>> MyParserExt<'a, O> for P {}
+impl<'a, O, E: ET<'a>, P: Parser<&'a [u8], O, E>> MyParserExt<'a, O, E> for P {}
 
 // these classes allow for simple syntax when writing parsers while allowing for good error handling in list1_sep_by
 
@@ -716,26 +733,26 @@ impl<F, Sep> UntermT<F, Sep> {
     // functions that relay on the specifics of the "CtrlC" parser
 
     #[inline]
-    pub fn parened<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl, SepList1<OF, OS>, Ctrl), ET<'a>>
+    pub fn parened<'a, OF, OS, E: ET<'a>>(self) -> impl Parser<&'a [u8], (Ctrl, SepList1<OF, OS>, Ctrl), E>
         where
-            F: Parser<&'a [u8], OF, ET<'a>>,
-            Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
+            F: Parser<&'a [u8], OF, E>,
+            Sep: Parser<&'a [u8], OS, E> + Copy + Clone + Sized,
     {
         self.delim_by(ctrl('('), ctrl(')'))
     }
     #[inline]
-    pub fn braced<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl, SepList1<OF, OS>, Ctrl), ET<'a>>
+    pub fn braced<'a, OF, OS, E: ET<'a>>(self) -> impl Parser<&'a [u8], (Ctrl, SepList1<OF, OS>, Ctrl), E>
         where
-            F: Parser<&'a [u8], OF, ET<'a>>,
-            Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
+            F: Parser<&'a [u8], OF, E>,
+            Sep: Parser<&'a [u8], OS, E> + Copy + Clone + Sized,
     {
         self.delim_by(ctrl('{'), ctrl('}'))
     }
     #[inline]
-    pub fn ang_braced<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl, SepList1<OF, OS>, Ctrl), ET<'a>>
+    pub fn ang_braced<'a, OF, OS, E: ET<'a>>(self) -> impl Parser<&'a [u8], (Ctrl, SepList1<OF, OS>, Ctrl), E>
         where
-            F: Parser<&'a [u8], OF, ET<'a>>,
-            Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
+            F: Parser<&'a [u8], OF, E>,
+            Sep: Parser<&'a [u8], OS, E> + Copy + Clone + Sized,
     {
         self.delim_by(ctrl('<'), ctrl('>'))
     }
@@ -782,18 +799,18 @@ impl<F, Sep> OptUntermT<F, Sep> {
     // functions that relay on the specifics of the "CtrlC" parser
     //
     #[inline]
-    pub fn parened<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl, Option<SepList1<OF, OS>>, Ctrl), ET<'a>>
+    pub fn parened<'a, OF, OS, E: ET<'a>>(self) -> impl Parser<&'a [u8], (Ctrl, Option<SepList1<OF, OS>>, Ctrl), E>
         where
-            F: Parser<&'a [u8], OF, ET<'a>>,
-            Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
+            F: Parser<&'a [u8], OF, E>,
+            Sep: Parser<&'a [u8], OS, E> + Copy + Clone + Sized,
     {
         self.delim_by(ctrl('('), ctrl(')'))
     }
     #[inline]
-    pub fn braced<'a, OF, OS>(self) -> impl Parser<&'a [u8], (Ctrl, Option<SepList1<OF, OS>>, Ctrl), ET<'a>>
+    pub fn braced<'a, OF, OS, E: ET<'a>>(self) -> impl Parser<&'a [u8], (Ctrl, Option<SepList1<OF, OS>>, Ctrl), E>
         where
-            F: Parser<&'a [u8], OF, ET<'a>>,
-            Sep: Parser<&'a [u8], OS, ET<'a>> + Copy + Clone + Sized,
+            F: Parser<&'a [u8], OF, E>,
+            Sep: Parser<&'a [u8], OS, E> + Copy + Clone + Sized,
     {
         self.delim_by(ctrl('{'), ctrl('}'))
     }
@@ -826,9 +843,9 @@ impl<F> Many0<F> {
     // functions that relay on the specifics of the "CtrlC" parser
 
     #[inline]
-    pub fn braced<'a, OF>(self) -> impl Parser<&'a [u8], (Ctrl, Vec<OF>, Ctrl), ET<'a>>
+    pub fn braced<'a, OF, E: ET<'a>>(self) -> impl Parser<&'a [u8], (Ctrl, Vec<OF>, Ctrl), E>
         where
-            F: Parser<&'a [u8], OF, ET<'a>>,
+            F: Parser<&'a [u8], OF, E>,
     {
         self.delim_by(ctrl('{'), ctrl('}'))
     }
@@ -861,9 +878,9 @@ impl<F> Many1<F> {
     // functions that relay on the specifics of the "CtrlC" parser
 
     #[inline]
-    pub fn braced<'a, OF>(self) -> impl Parser<&'a [u8], (Ctrl, Vec<OF>, Ctrl), ET<'a>>
+    pub fn braced<'a, OF, E: ET<'a>>(self) -> impl Parser<&'a [u8], (Ctrl, Vec<OF>, Ctrl), E>
         where
-            F: Parser<&'a [u8], OF, ET<'a>>,
+            F: Parser<&'a [u8], OF, E>,
     {
         self.delim_by(ctrl('{'), ctrl('}'))
     }
@@ -873,7 +890,7 @@ impl<F> Many1<F> {
 /// parse_separated_terminated. This exists so that we don't have to have an
 /// unnecessary bound of FromExternalError on parse_separated_terminated.
 #[inline]
-pub fn uncut<'a, PO>(mut p: impl Parser<&'a [u8], PO, ET<'a>>) -> impl Parser<&'a [u8], PO, ET<'a>> {
+pub fn uncut<'a, PO, E: ET<'a>>(mut p: impl Parser<&'a [u8], PO, E>) -> impl Parser<&'a [u8], PO, E> {
     move |input: &'a [u8]| match p.parse(input) {
         Err(nom::Err::Error(v)) | Err(nom::Err::Failure(v)) => Err(nom::Err::Error(v)),
         v => v,

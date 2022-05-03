@@ -103,6 +103,22 @@ struct Cli {
     width: usize,
 }
 
+/*
+    for _ in 0..1000 {
+        let path = "sample.act";
+        let src = fs::read_to_string(&path).unwrap_or_else(|_| {
+            println!(
+                "Failed to read file '{}'",
+                path
+            );
+            std::process::exit(1)
+        });
+
+        let parse_result = parse_or_print_errors(&src, false);
+        print!("{}", parse_result.final_comments.len());
+    }
+ */
+
 fn main() {
     let args: Cli = Cli::parse();
 
