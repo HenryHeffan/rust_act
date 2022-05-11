@@ -980,6 +980,7 @@ pub fn top_item<'a, E: ET<'a>>(i: &'a [u8]) -> IResult<&'a [u8], TopItem, E> {
     basic_item_helper(true).context("top level item").parse(i)
 }
 
+#[flame]
 pub fn top_level<'a, E: ET<'a>>(i: &'a [u8]) -> nom::IResult<&'a [u8], Vec<TopItem>, E> {
     top_item
         .many0()

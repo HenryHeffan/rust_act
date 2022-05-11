@@ -1,3 +1,7 @@
+extern crate flame;
+#[macro_use]
+extern crate flamer;
+
 use std::ops::Range;
 
 use nom::{Finish, Parser};
@@ -157,4 +161,21 @@ pub fn parse(data: &str) -> LexParseResult {
             }
         }
     }
+}
+
+pub fn profile(data: &str, n: usize) {
+    let mut x = 0;
+    for _ in 0..n {
+        let res = parse(data);
+        match res {
+            LexParseResult::Ok(_) => x += 1,
+            _ => {}
+        }
+    }
+    println!("{}", x);
+
+    use std::fs::File;
+    // in order to create the flamegraph you must call one of the
+    // flame::dump_* functions.
+    flame::dump_html(File::create("flamegraph.html").unwrap()).unwrap();
 }

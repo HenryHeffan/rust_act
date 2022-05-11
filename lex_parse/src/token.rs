@@ -1,15 +1,11 @@
 use std::str;
+use std::time::{Duration, Instant};
 
-use nom::{
-    branch::alt,
-    bytes::complete::{is_not, tag, take, take_until, take_while, take_while1},
-    character::complete::{alpha1, alphanumeric1, char, digit1, hex_digit1, one_of},
-    combinator::{all_consuming, map, opt, recognize, rest},
-    error::{context, ContextError, ParseError},
-    IResult,
-    multi::{many0, many0_count, many1},
-    sequence::{delimited, pair, preceded, tuple},
-};
+use nom::{AsChar, branch::alt, bytes::complete::{is_not, tag, take, take_until, take_while, take_while1}, character::complete::{alpha1, alphanumeric1, char, digit1, hex_digit1, one_of}, combinator::{all_consuming, map, opt, recognize, rest}, error::{context, ContextError, ParseError}, Finish, IResult, multi::{many0, many0_count, many1}, sequence::{delimited, pair, preceded, tuple}};
+use nom::character::complete::{digit0, multispace0, newline};
+use nom::combinator::{eof, not};
+use nom::sequence::terminated;
+use crate::error::{ErrorIgnorer, ErrorIgnorerT};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TokenKind {
@@ -388,15 +384,137 @@ fn padded_token<'a, E: ParseError<&'a str> + ContextError<&'a str>>(i: &'a str) 
     )(i)
 }
 
-#[inline(never)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum SK {
+    Space,
+    LineComment,
+    BlockComment,
+    UntermBlockComment,
+    Num,
+    Str,
+    UntermStr,
+    Identlike,
+    Ctrl,
+    IllegalChar,
+}
+
+fn simple_token(i: &str) -> (&str, SK, &str) {
+    assert!(i.len() > 0);
+    let first_c: char = i.chars().nth(0).unwrap();
+    let second_c = if i.len() >= 2 { i.chars().nth(1).unwrap() } else { ' ' };
+
+    let eat = |kind, len| (&i[len..], SK::Space, &i[..len]);
+
+    match first_c {
+        ' ' | '\n' | '\t' | '\r' => eat(SK::Space, 1),
+        '/' => match second_c {
+            '/' => {
+                let comment_len = recognize::<_,_,ErrorIgnorerT<&str>,_>(many0(not(newline)))(&i[2..]).map(|(_, v)| v.len()).unwrap_or(0);
+                eat(SK::LineComment, 2 + comment_len)
+            }
+            '*' => {
+                match recognize::<_,_,ErrorIgnorerT<&str>,_>(
+                    terminated(context("block comment", take_until("*/")), opt(tag("*/")),
+                    ),
+                )(&i[2..]).finish() {
+                    Ok((_, comm)) => {
+                        eat(SK::BlockComment, 2 + comm.len())
+                    }
+                    _ => {
+                        eat(SK::UntermBlockComment, i.len())
+                    }
+                }
+            }
+            _ => eat(SK::Ctrl, 1)
+        },
+        '"' => {
+            match
+            recognize::<_,_,ErrorIgnorerT<&str>,_>(
+                terminated(take_while(|c| !"\"\n".contains(c)), opt(alt((tag("\""), tag("\n")))))
+                )(&i[1..]).finish() {
+                Ok((_, comm)) => {
+                    eat(SK::Str, 1 + comm.len())
+                }
+                _ => {
+                    eat(SK::Str, i.len())
+                }
+            }
+        }
+        '0' if second_c == 'x' || second_c == 'b' => match second_c {
+            'x' => {
+                let comment_len = recognize::<_,_,ErrorIgnorerT<&str>,_>(opt(hex_digit1))(&i[2..]).unwrap().1.len();
+                eat(SK::Num, 2 + comment_len)
+            }
+            'b' => {
+                let comment_len = recognize::<_,_,ErrorIgnorerT<&str>,_>(many0(one_of("01")))(&i[2..]).unwrap().1.len();
+                eat(SK::Num, 2 + comment_len)
+            }
+            _ => panic!()
+        },
+        _ if first_c.is_digit(10) => {
+            let digits = 1 + recognize::<_,_,ErrorIgnorerT<&str>,_>(digit0)(&i[1..]).unwrap().1.len();
+            if i.chars().nth(digits).map(|c| c == '.').unwrap_or(false) {
+                let total_len = digits + 1 + recognize::<_,_,ErrorIgnorerT<&str>,_>(digit0)(&i[1..]).unwrap().1.len();
+                eat(SK::Num, total_len)
+            } else {
+                eat(SK::Num, digits)
+            }
+        }
+        '_' | _ if first_c.is_ascii_alphabetic() => {
+            let len =
+                recognize::<_,_,ErrorIgnorerT<&str>,_>(pair(
+                    alt((alpha1, tag("_"))),
+                    many0_count(alt((alphanumeric1, tag("_")))),
+                ))(i).unwrap().1.len();
+
+            eat(SK::Identlike, len)
+        }
+        _ => {
+            if CTRL_CHARS.contains(first_c) {
+                eat(SK::Ctrl, 1)
+            } else {
+                eat(SK::IllegalChar, 1)
+            }
+        }
+    }
+}
+
+fn simple_tokens(
+    i: & str,
+)  -> Vec<(SK, &str)>{
+    let mut result = Vec::new();
+    let mut i = i;
+    while i.len() >= 2 {
+        let (ii, sk, v) = simple_token(i);
+        result.push((sk, v));
+        i = ii;
+    }
+    if i.len() > 0 {
+        let (ii, sk, v) = simple_token(i);
+        result.push((sk, v));
+        i = ii;
+    }
+    assert_eq!(i.len(), 0);
+    result
+}
+
+
+#[flame]
 pub fn lexer<'a, E: ParseError<&'a str> + ContextError<&'a str>>(
     i: &'a str,
 ) -> IResult<&'a str, (Vec<Token<'a>>, Vec<(WhitespaceKind, &'a str)>), E> {
-    all_consuming(pair(many0(padded_token), whitespace_or_comment))(i)
+    let now = Instant::now();
+    simple_tokens(i);
+    println!("{}", now.elapsed().as_millis());
+    let now = Instant::now();
+    let result = all_consuming(pair(many0(padded_token), whitespace_or_comment))(i);
+    println!("{}", now.elapsed().as_millis());
+    result
 }
 
 pub type FlatToken = u8;
 
+#[flame]
 pub fn flatten_token_list(toks: &Vec<Token>) -> Vec<FlatToken> {
     toks.iter().map(|tok| tok.kind as u8).collect()
 }

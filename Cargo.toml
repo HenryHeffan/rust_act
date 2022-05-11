@@ -28,5 +28,6 @@ lex_parse = { path = "lex_parse" }
 symantics = { path = "symantics" }
 
 [profile.release]
-lto = true
-strip = true
+debug = true
+#lto = true
+#strip = true

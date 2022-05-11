@@ -101,6 +101,10 @@ struct Cli {
     /// maximum line width
     #[clap(short, long, default_value_t = 80)]
     width: usize,
+
+    /// Run the parsing repeatedly as a benchmark
+    #[clap(long)]
+    benchmark: bool,
 }
 
 /*
@@ -121,8 +125,8 @@ struct Cli {
 
 fn main() {
     let args: Cli = Cli::parse();
-
-    for path in args.paths {
+    if args.benchmark {
+        let path = &args.paths[0];
         let src = fs::read_to_string(&path).unwrap_or_else(|_| {
             println!(
                 "Failed to read file '{}'",
@@ -131,14 +135,26 @@ fn main() {
             std::process::exit(1)
         });
 
-        let parse_result = parse_or_print_errors(&src, args.verbose);
+        profile(&src, 1);
+    } else {
+        for path in args.paths {
+            let src = fs::read_to_string(&path).unwrap_or_else(|_| {
+                println!(
+                    "Failed to read file '{}'",
+                    path.to_str().unwrap_or("<ERROR DECODING PATH>")
+                );
+                std::process::exit(1)
+            });
 
-        if !args.dry_run {
-            let pretty_str = print_pretty(&parse_result, args.width)
-                .unwrap_or("Failed to pretty-print ast".to_string());
-            match args.inplace {
-                true => fs::write(&path, pretty_str).expect("Failed to write file"),
-                false => println!("{}", pretty_str),
+            let parse_result = parse_or_print_errors(&src, args.verbose);
+
+            if !args.dry_run {
+                let pretty_str = print_pretty(&parse_result, args.width)
+                    .unwrap_or("Failed to pretty-print ast".to_string());
+                match args.inplace {
+                    true => fs::write(&path, pretty_str).expect("Failed to write file"),
+                    false => println!("{}", pretty_str),
+                }
             }
         }
     }
